@@ -1,16 +1,34 @@
-## Hi there 👋
+# FatherVPN — стартовый backend и Telegram-бот
 
-<!--
-**FatherVPN/FatherVPN** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+Проект включает Telegram-бота на aiogram, API на FastAPI, проверку Telegram Login Widget и SQLite.
 
-Here are some ideas to get you started:
+## Важные ограничения
+- Бот принимает оплату цифровой подписки через Telegram Stars (`XTR`). Для продажи цифровых товаров внутри Telegram используйте Stars. Цена в Stars не равна автоматически 80 ₽ — выберите количество Stars и явно показывайте его пользователю.
+- Реальный VPN-провайдер намеренно не подключён. `app/vpn_provider.py` блокирует выдачу конфигурации, пока не будет настроен WireGuard или совместимая VPN-панель.
+- Для оплаты именно в рублях интегрируйте платёжного провайдера на сайте и проверяйте подписанные вебхуки сервером. Не доверяйте редиректу после оплаты.
+- Никогда не публикуйте `.env`, токен бота или секрет подписи.
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+## Запуск
+1. Python 3.11+
+2. `python -m venv .venv` и активировать окружение
+3. `pip install -r requirements.txt`
+4. Скопировать `.env.example` в `.env`, заполнить секреты и имя бота
+5. `python -m app`
+
+Для Telegram Login Widget задайте домен через @BotFather командой `/setdomain`. Публичный API должен работать через HTTPS.
+
+## API
+- `GET /health`
+- `GET /api/plans`
+- `POST /api/telegram/auth` — проверяет подпись Telegram и возвращает JWT на 1 час
+- `GET /api/me` — статус подписки
+- `GET /api/subscription/config` — вернёт 503 до настройки VPN-провайдера
+
+## Бот
+- `/start` — меню
+- «Купить подписку» — invoice в Telegram Stars
+- После `successful_payment` подписка записывается в БД
+- Проверка статуса и запрос конфигурации
+
+## До production
+Подключите реальный VPN-провайдер, автоматическое отключение просроченных клиентов, HTTPS, резервные копии, мониторинг, rate limiting, обработку возвратов и политику конфиденциальности. Проверьте применимые требования закона.
