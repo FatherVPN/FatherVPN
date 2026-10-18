@@ -5,4 +5,4 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY bot.py core.py telegram_bot.py webapp.py smart_webapp.py index.html ./
 COPY servers ./servers
-CMD ["python", "bot.py"]
+CMD ["sh", "-c", "sed 's/from webapp import app/from smart_webapp import app/' bot.py > run.py && python run.py"]
