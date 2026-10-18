@@ -1,7 +1,7 @@
 import asyncio
 import uvicorn
 
-from core import BASE_URL, PORT, validate_config
+from core import BASE_URL, PORT, storage_backend, validate_config
 from telegram_bot import bot, dp
 from webapp import app
 
@@ -16,7 +16,7 @@ async def run_web():
 async def main():
     validate_config()
     me = await bot.get_me()
-    print(f"FatherVPN @{me.username} started; web={BASE_URL}; port={PORT}")
+    print(f"FatherVPN @{me.username} started; web={BASE_URL}; port={PORT}; storage={storage_backend()}")
     await asyncio.gather(dp.start_polling(bot), run_web())
 
 
