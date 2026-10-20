@@ -1,3 +1,8 @@
+import asyncio
+import logging
+import os
+import urllib.request
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
@@ -22,7 +27,55 @@ from core import (
     utc_now,
 )
 
+log = logging.getLogger("fathervpn.self_ping")
+
 app = FastAPI(title="FatherVPN", version="5.0")
+
+# ---- self-ping (keep-alive) ------------------------------------------------
+SELF_URL = os.getenv("SELF_URL", f"{BASE_URL.rstrip('/')}/health")
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "300"))  # 5 минут
+_self_ping_task: asyncio.Task | None = None
+
+
+def _sync_ping(url: str) -> None:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "FatherVPN-self-ping/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            log.debug("self-ping %s -> %s", url, resp.status)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("self-ping failed: %s", exc)
+
+
+async def self_ping_loop() -> None:
+    """Периодически дёргает /health, пока контейнер бодрствует.
+
+    ВАЖНО: это НЕ заменяет внешний пингер. Когда Render усыпляет
+    контейнер, эта задача останавливается вместе с процессом и не может
+    разбудить сама себя. Внешний монитор (UptimeRobot / cron-job.org)
+    на /health всё равно нужен.
+    """
+    await asyncio.sleep(30)  # дать приложению подняться
+    while True:
+        await asyncio.to_thread(_sync_ping, SELF_URL)
+        await asyncio.sleep(SELF_PING_INTERVAL)
+
+
+@app.on_event("startup")
+async def _start_self_ping() -> None:
+    global _self_ping_task
+    _self_ping_task = asyncio.create_task(self_ping_loop(), name="self_ping")
+    log.info("self-ping started: %s every %ss", SELF_URL, SELF_PING_INTERVAL)
+
+
+@app.on_event("shutdown")
+async def _stop_self_ping() -> None:
+    if _self_ping_task and not _self_ping_task.done():
+        _self_ping_task.cancel()
+        try:
+            await _self_ping_task
+        except asyncio.CancelledError:
+            pass
+# ---------------------------------------------------------------------------
 
 
 def no_cache_headers():
