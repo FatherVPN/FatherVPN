@@ -12,7 +12,7 @@ ADMIN_WEB_TOKEN=os.environ.get('ADMIN_WEB_TOKEN','').strip()
 def ik(rows):return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_web_url():return f'{BASE_URL}/admin/login/{ADMIN_WEB_TOKEN}' if ADMIN_WEB_TOKEN else f'{BASE_URL}/admin/login'
 def menu(uid):
-    cabinet=ensure_cabinet_token(uid);rows=[[InlineKeyboardButton(text='🚀 Купить VPN',callback_data='buy')],[InlineKeyboardButton(text='👤 Моя подписка',callback_data='profile')],[InlineKeyboardButton(text='🌐 Личный кабинет',url=f'{BASE_URL}/cabinet/{cabinet}')],[InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')]]
+    cabinet=ensure_cabinet_token(uid);rows=[[InlineKeyboardButton(text='✨ Открыть FatherVPN',web_app=WebAppInfo(url=f'{BASE_URL}/miniapp'))],[InlineKeyboardButton(text='🚀 Купить VPN',callback_data='buy')],[InlineKeyboardButton(text='👤 Моя подписка',callback_data='profile')],[InlineKeyboardButton(text='🌐 Личный кабинет',url=f'{BASE_URL}/cabinet/{cabinet}')],[InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')]]
     if int(uid)==ADMIN_ID:rows.append([InlineKeyboardButton(text='🛠 Веб-админка',url=admin_web_url()),InlineKeyboardButton(text='⚙️ Команды',callback_data='admin')])
     return ik(rows)
 def plans():
