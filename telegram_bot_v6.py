@@ -12,7 +12,7 @@ ADMIN_WEB_TOKEN=os.environ.get('ADMIN_WEB_TOKEN','').strip()
 def ik(rows):return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_web_url():return f'{BASE_URL}/admin/login/{ADMIN_WEB_TOKEN}' if ADMIN_WEB_TOKEN else f'{BASE_URL}/admin/login'
 def menu(uid):
-    cabinet=ensure_cabinet_token(uid);rows=[[InlineKeyboardButton(text='✨ Открыть FatherVPN',web_app=WebAppInfo(url=f'{BASE_URL}/miniapp'))],[InlineKeyboardButton(text='🚀 Купить VPN',callback_data='buy')],[InlineKeyboardButton(text='👤 Моя подписка',callback_data='profile')],[InlineKeyboardButton(text='🌐 Личный кабинет',url=f'{BASE_URL}/cabinet/{cabinet}')],[InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')]]
+    cabinet=ensure_cabinet_token(uid);rows=[[InlineKeyboardButton(text='✨ Открыть FatherVPN',web_app=WebAppInfo(url=f'{BASE_URL}/miniapp'))],[InlineKeyboardButton(text='🚀 Купить VPN',callback_data='buy')],[InlineKeyboardButton(text='👤 Моя подписка',callback_data='profile')],[InlineKeyboardButton(text='🌐 Личный кабинет',url=f'{BASE_URL}/cabinet/{cabinet}')],[InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')],[InlineKeyboardButton(text='ℹ️ Информация и документы',callback_data='info')]]
     if int(uid)==ADMIN_ID:rows.append([InlineKeyboardButton(text='🛠 Веб-админка',url=admin_web_url()),InlineKeyboardButton(text='⚙️ Команды',callback_data='admin')])
     return ik(rows)
 def plans():
@@ -71,6 +71,27 @@ async def profile(q:CallbackQuery):
     status='✅ Активна' if subscription_active(u) else ('⛔ Заблокирована' if u['blocked'] else '⚪ Неактивна');text,kb=access(q.from_user.id);await q.message.edit_text(f"👤 <b>Моя подписка</b>\nСтатус: {status}\nТариф: <b>{html.escape(u['tariff'] or '—')}</b>\nДо: <b>{html.escape(fmt_dt(u['expires_at']))}</b>\n\n{text}",reply_markup=kb,parse_mode='HTML');await q.answer()
 @router.callback_query(F.data=='help')
 async def helpme(q:CallbackQuery):await q.message.edit_text('📖 <b>Как подключиться</b>\n\n1. Купите подписку.\n2. Бот сразу выдаст персональную ссылку.\n3. Откройте её в браузере — увидите QR-код и статус подписки.\n4. Добавьте эту же ссылку в VPN-клиент или отсканируйте QR.\n\nОтдельного RAW-адреса в интерфейсе нет.',reply_markup=ik([[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
+def info_text():
+    return (
+        'ℹ️ <b>Информация о FatherVPN</b>\n\n'
+        'FatherVPN предоставляет VPN-подписку, персональную ссылку и QR-код. '
+        'Перед использованием ознакомьтесь с документами ниже.\n\n'
+        'По вопросам обработки данных, подписки и работы сервиса: '
+        '<a href="https://t.me/Father_vpn_support">@Father_vpn_support</a>.'
+    )
+def info_keyboard():
+    return ik([
+        [InlineKeyboardButton(text='🔐 Политика конфиденциальности',url=f'{BASE_URL}/privacy')],
+        [InlineKeyboardButton(text='📄 Пользовательское соглашение',url=f'{BASE_URL}/terms')],
+        [InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')],
+    ])
+@router.message(Command('info'))
+async def info_command(m:Message):
+    await m.answer(info_text(),reply_markup=info_keyboard(),parse_mode='HTML')
+@router.callback_query(F.data=='info')
+async def cb_info(q:CallbackQuery):
+    await q.message.edit_text(info_text(),reply_markup=info_keyboard(),parse_mode='HTML')
+    await q.answer()
 @router.callback_query(F.data=='admin')
 async def admin(q:CallbackQuery):
     if q.from_user.id!=ADMIN_ID:return await q.answer('Нет доступа',show_alert=True)
