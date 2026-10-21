@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile all active Python entry points
-        run: python -m py_compile bot.py core.py smart_webapp.py telegram_admin_auth.py telegram_bot_v6.py
+        run: python -m py_compile bot.py core.py smart_webapp.py telegram_admin_auth.py telegram_bot_v6.py miniapp.py
