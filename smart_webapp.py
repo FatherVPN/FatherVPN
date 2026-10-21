@@ -232,6 +232,12 @@ def _account_set_cookie(response, raw: str):
     return response
 
 
+def _account_form_response(content: str, nonce: str):
+    response = html_response(content)
+    response.set_cookie("fvpn_account_form", nonce, max_age=600, httponly=True, secure=True, samesite="lax", path="/")
+    return response
+
+
 def _account_form(request_body: bytes):
     try:
         parsed = parse_qs(request_body.decode("utf-8"), keep_blank_values=True, max_num_fields=30)
@@ -292,20 +298,24 @@ def _account_csrf_ok(session, form):
 async def account_register_page(request: Request):
     if _account_session(request):
         return RedirectResponse("/account", status_code=303)
-    body = '''<p class="sub">Создайте аккаунт, чтобы управлять привязкой Telegram и данными подписки.</p>
-<form method="post" action="/register">
+    form_nonce = secrets.token_urlsafe(24)
+    body = f'''<p class="sub">Создайте аккаунт, чтобы управлять привязкой Telegram и данными подписки.</p>
+<form method="post" action="/register"><input type="hidden" name="csrf" value="{esc(form_nonce)}">
 <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com">
 <label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required placeholder="Не менее 10 символов">
 <label for="password2">Повторите пароль</label><input id="password2" name="password2" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
 <p class="fieldhint">Email будет логином. Подтверждение почты пока не настроено, поэтому используйте адрес, к которому у вас есть доступ.</p>
 <button class="btn primary" type="submit">Создать аккаунт</button></form>
 <div class="divider"></div><p class="muted">Уже зарегистрированы? <a class="link" href="/login">Войти</a></p>'''
-    return html_response(_account_page("Создать аккаунт", body))
+    return _account_form_response(_account_page("Создать аккаунт", body), form_nonce)
 
 
 @app.post("/register")
 async def account_register(request: Request):
     form = _account_form(await request.body())
+    form_nonce = request.cookies.get("fvpn_account_form", "")
+    if not form_nonce or not form.get("csrf") or not secrets.compare_digest(form_nonce, str(form.get("csrf"))):
+        return html_response(_account_page("Создать аккаунт", "", "Форма устарела. Откройте её снова.", True), 403)
     email = form.get("email", "").strip().lower()
     password = form.get("password", "")
     password2 = form.get("password2", "")
@@ -337,18 +347,22 @@ async def account_register(request: Request):
 async def account_login_page(request: Request):
     if _account_session(request):
         return RedirectResponse("/account", status_code=303)
-    body = '''<p class="sub">Войдите в личный кабинет FatherVPN.</p>
-<form method="post" action="/login">
+    form_nonce = secrets.token_urlsafe(24)
+    body = f'''<p class="sub">Войдите в личный кабинет FatherVPN.</p>
+<form method="post" action="/login"><input type="hidden" name="csrf" value="{esc(form_nonce)}">
 <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" maxlength="254" required placeholder="you@example.com">
 <label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
 <button class="btn primary" type="submit">Войти</button></form>
 <div class="divider"></div><p class="muted">Нет аккаунта? <a class="link" href="/register">Зарегистрироваться</a></p>'''
-    return html_response(_account_page("Вход в аккаунт", body))
+    return _account_form_response(_account_page("Вход в аккаунт", body), form_nonce)
 
 
 @app.post("/login")
 async def account_login(request: Request):
     form = _account_form(await request.body())
+    form_nonce = request.cookies.get("fvpn_account_form", "")
+    if not form_nonce or not form.get("csrf") or not secrets.compare_digest(form_nonce, str(form.get("csrf"))):
+        return html_response(_account_page("Вход в аккаунт", "", "Форма устарела. Откройте её снова.", True), 403)
     email = form.get("email", "").strip().lower()
     password = form.get("password", "")
     c = db()
