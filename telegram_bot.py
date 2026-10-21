@@ -234,12 +234,15 @@ async def send_invoice_for_user(user_id: int, code: str, contact_method: str, co
             provider_data=paymaster_provider_data(uid, tariff_code, nonce),
             start_parameter=f"fathervpn-{code}",
         )
-        log_action(user_id, "invoice_created", "user", user_id, f"{code}; contact={contact_method}")
-        return True, None
     except Exception as e:
         delete_pending_payment_contact(payload)
         print("invoice error:", repr(e))
         return False, "Не удалось создать счёт. Попробуйте ещё раз или обратитесь в поддержку."
+    try:
+        log_action(user_id, "invoice_created", "user", user_id, f"{code}; contact={contact_method}")
+    except Exception as e:
+        print("invoice audit log error:", repr(e))
+    return True, None
 
 
 @router.callback_query(F.data.startswith("pay:"))
