@@ -35,8 +35,10 @@ async def cb_buy(q:CallbackQuery):await q.message.edit_text('🚀 <b>Выбер�
 async def cb_tariff(q:CallbackQuery):
     code=q.data.split(':',1)[1];t=TARIFFS.get(code)
     if not t:return await q.answer('Тариф не найден',show_alert=True)
-    rows=[[InlineKeyboardButton(text='💳 Оплатить TEST',callback_data=f'pay:{code}')]] if t['price'] and PAYMENTS_ENABLED else [[InlineKeyboardButton(text='🆘 Получить через поддержку',url='https://t.me/Father_vpn_support')]];rows.append([InlineKeyboardButton(text='⬅️ Назад',callback_data='buy')]);await q.message.edit_text(f"{t['emoji']} <b>{t['name']}</b>\n💰 {t['price']} ₽\n📅 {t['days']} дней\n\nПосле оплаты персональная ссылка и QR-код появятся сразу.",reply_markup=ik(rows),parse_mode='HTML');await q.answer()
+    rows=[[InlineKeyboardButton(text='💳 Оплатить TEST',callback_data=f'pay:{code}')]] if t['price'] and PAYMENTS_ENABLED and PAYMENT_PROVIDER_TOKEN and legal_documents_available() else [[InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')]];rows.append([InlineKeyboardButton(text='⬅️ Назад',callback_data='buy')]);await q.message.edit_text(f"{t['emoji']} <b>{t['name']}</b>\n💰 {t['price']} ₽\n📅 {t['days']} дней\n\nПосле оплаты персональная ссылка и QR-код появятся сразу.",reply_markup=ik(rows),parse_mode='HTML');await q.answer()
 async def send_invoice_for_user(user_id: int, code: str, contact_method: str, contact_value: str):
+    if not legal_documents_available():
+        return False, "Оплата временно недоступна: юридические документы проходят проверку."
     if not PAYMENTS_ENABLED or not PAYMENT_PROVIDER_TOKEN:
         return False, "Оплата временно недоступна. Напишите в поддержку."
     tariff = TARIFFS.get(code)
@@ -83,6 +85,8 @@ async def send_invoice_for_user(user_id: int, code: str, contact_method: str, co
 async def cb_pay(q: CallbackQuery):
     code = q.data.split(':', 1)[1]
     tariff = TARIFFS.get(code)
+    if not legal_documents_available():
+        return await q.answer('Оплата временно недоступна: юридические документы проходят проверку.', show_alert=True)
     if not tariff or not tariff["price"] or not PAYMENTS_ENABLED or not PAYMENT_PROVIDER_TOKEN:
         return await q.answer('Оплата временно недоступна', show_alert=True)
     user = get_user(q.from_user.id)
@@ -109,6 +113,8 @@ async def cb_contact_method(q: CallbackQuery):
     tariff = TARIFFS.get(code)
     if method not in {'telegram', 'email'} or not tariff or not tariff['price']:
         return await q.answer('Не удалось определить способ связи или тариф', show_alert=True)
+    if not legal_documents_available():
+        return await q.answer('Оплата временно недоступна: юридические документы проходят проверку.', show_alert=True)
     if not PAYMENTS_ENABLED or not PAYMENT_PROVIDER_TOKEN:
         return await q.answer('Оплата временно недоступна', show_alert=True)
     user = get_user(q.from_user.id)
@@ -141,6 +147,7 @@ async def checkout(p:PreCheckoutQuery):
     if not parsed:return await p.answer(ok=False,error_message='Некорректный заказ')
     uid,code,_=parsed;t=TARIFFS[code];user=get_user(p.from_user.id)
     if uid!=p.from_user.id:return await p.answer(ok=False,error_message='Счёт создан для другого пользователя')
+    if not legal_documents_available():return await p.answer(ok=False,error_message='Оплата временно недоступна: юридические документы проходят проверку.')
     if not get_pending_payment_contact(p.invoice_payload, uid):return await p.answer(ok=False,error_message='Не найден контакт для связи по заказу. Создайте новый счёт.')
     if user and user['blocked']:return await p.answer(ok=False,error_message='Учётная запись заблокирована')
     if p.currency!=PAYMENT_CURRENCY or p.total_amount!=t['price']*100:return await p.answer(ok=False,error_message='Сумма или валюта заказа изменилась')
