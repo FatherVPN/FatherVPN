@@ -1,20 +1,14 @@
 import html
-import re
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery
 
 from core import (
     ADMIN_ID,
     BASE_URL,
     BOT_TOKEN,
     MAX_DEVICES,
-    delete_pending_payment_contact,
-    get_pending_payment_contact,
-    legal_documents_available,
-    save_pending_payment_contact,
-    set_user_contact,
     PAYMENT_CURRENCY,
     PAYMENT_PROVIDER_TOKEN,
     PAYMENTS_ENABLED,
@@ -44,8 +38,6 @@ dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
-pending_email_tariffs: dict[int, str] = {}
-
 
 def ik(rows):
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -57,46 +49,10 @@ def main_menu(user_id):
         [InlineKeyboardButton(text="🚀 Купить VPN", callback_data="buy")],
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"), InlineKeyboardButton(text="📱 Устройства", callback_data="devices")],
         [InlineKeyboardButton(text="🌐 Личный кабинет", url=f"{BASE_URL}/cabinet/{cabinet}")],
-        [InlineKeyboardButton(text="📄 Информация и документы", callback_data="info")],
         [InlineKeyboardButton(text="📖 Инструкция", callback_data="help"), InlineKeyboardButton(text="🆘 Поддержка", url="https://t.me/Father_vpn_support")],
     ]
     if int(user_id) == ADMIN_ID:
         rows.append([InlineKeyboardButton(text="🛠 Админ-панель", callback_data="admin")])
-    return ik(rows)
-
-
-
-def info_text():
-    lines = [
-        "📄 <b>Информация FatherVPN</b>",
-        "",
-        "Оператор: <b>Панов Евгений Ринатович</b>",
-        'Поддержка и претензии: <a href="https://t.me/Father_vpn_support">@Father_vpn_support</a>',
-        "Контакт по заказу: Telegram или email на выбор при оплате.",
-    ]
-    if legal_documents_available():
-        lines.extend([
-            "",
-            f'Политика конфиденциальности: <a href="{BASE_URL}/privacy">открыть</a>',
-            f'Пользовательское соглашение: <a href="{BASE_URL}/terms">открыть</a>',
-        ])
-    else:
-        lines.extend([
-            "",
-            "Юридические документы проходят проверку обязательных реквизитов и пока не опубликованы.",
-        ])
-    return "\n".join(lines)
-
-
-def info_keyboard():
-    rows = []
-    if legal_documents_available():
-        rows.extend([
-            [InlineKeyboardButton(text="Политика конфиденциальности", url=f"{BASE_URL}/privacy")],
-            [InlineKeyboardButton(text="Пользовательское соглашение", url=f"{BASE_URL}/terms")],
-        ])
-    rows.append([InlineKeyboardButton(text="🆘 Поддержка", url="https://t.me/Father_vpn_support")])
-    rows.append([InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")])
     return ik(rows)
 
 
@@ -154,21 +110,10 @@ async def cmd_start(message: Message, command: CommandObject):
         )
         return
     await message.answer(
-        "⛅️ <b>FatherVPN</b>\nПерсональная подписка и удобное управление через Telegram.",
+        "⛅️ <b>FatherVPN</b>\nНадёжный VPN с персональными ссылками для каждого устройства.",
         reply_markup=main_menu(u.id),
         parse_mode="HTML",
     )
-
-
-@router.message(Command("info"))
-async def cmd_info(message: Message):
-    await message.answer(info_text(), reply_markup=info_keyboard(), parse_mode="HTML")
-
-
-@router.callback_query(F.data == "info")
-async def cb_info(q: CallbackQuery):
-    await q.message.answer(info_text(), reply_markup=info_keyboard(), parse_mode="HTML")
-    await q.answer()
 
 
 @router.callback_query(F.data == "menu")
@@ -202,49 +147,6 @@ async def cb_tariff(q: CallbackQuery):
     await q.answer()
 
 
-async def send_invoice_for_user(user_id: int, code: str, contact_method: str, contact_value: str):
-    if not PAYMENTS_ENABLED or not PAYMENT_PROVIDER_TOKEN:
-        return False, "Оплата временно недоступна. Напишите в поддержку."
-    t = TARIFFS.get(code)
-    if not t or t["price"] <= 0:
-        return False, "Этот тариф выдаёт администратор."
-    if contact_method not in {"telegram", "email"} or not contact_value:
-        return False, "Выберите контакт для связи перед оплатой."
-    if contact_method == "email" and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", contact_value.strip()):
-        return False, "Проверьте адрес электронной почты."
-
-    user = get_user(user_id)
-    if user and user["blocked"]:
-        return False, "Учётная запись заблокирована."
-    if not user:
-        upsert_user(user_id)
-    set_user_contact(user_id, contact_method, contact_value)
-    payload = payment_payload(user_id, code)
-    uid, tariff_code, nonce = parse_payload(payload)
-    save_pending_payment_contact(payload, user_id, contact_method, contact_value)
-    try:
-        await bot.send_invoice(
-            chat_id=user_id,
-            title=f"FatherVPN · {t['name']}",
-            description=f"Тестовая оплата FatherVPN на {t['days']} дней, до {MAX_DEVICES} устройств.",
-            payload=payload,
-            provider_token=PAYMENT_PROVIDER_TOKEN,
-            currency=PAYMENT_CURRENCY,
-            prices=[LabeledPrice(label=f"FatherVPN · {t['name']}", amount=t["price"] * 100)],
-            provider_data=paymaster_provider_data(uid, tariff_code, nonce),
-            start_parameter=f"fathervpn-{code}",
-        )
-    except Exception as e:
-        delete_pending_payment_contact(payload)
-        print("invoice error:", repr(e))
-        return False, "Не удалось создать счёт. Попробуйте ещё раз или обратитесь в поддержку."
-    try:
-        log_action(user_id, "invoice_created", "user", user_id, f"{code}; contact={contact_method}")
-    except Exception as e:
-        print("invoice audit log error:", repr(e))
-    return True, None
-
-
 @router.callback_query(F.data.startswith("pay:"))
 async def cb_pay(q: CallbackQuery):
     code = q.data.split(":", 1)[1]
@@ -256,51 +158,25 @@ async def cb_pay(q: CallbackQuery):
         return await q.answer("Учётная запись заблокирована", show_alert=True)
     if not t or t["price"] <= 0:
         return await q.answer("Этот тариф выдаёт администратор", show_alert=True)
-    await q.message.edit_text(
-        f"{t['emoji']} <b>{t['name']}</b>\n\n"
-        "Перед оплатой выберите контакт для связи по заказу, возврату или спорному платежу. "
-        "Контакт будет сохранён вместе с данными заказа.\n\n"
-        "Telegram — связь через этого бота. Email — укажите адрес, по которому с вами можно связаться.",
-        reply_markup=ik([
-            [InlineKeyboardButton(text="Telegram", callback_data=f"contactmethod:telegram:{code}")],
-            [InlineKeyboardButton(text="Email", callback_data=f"contactmethod:email:{code}")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"tariff:{code}")],
-        ]),
-        parse_mode="HTML",
-    )
-    await q.answer()
-
-
-@router.callback_query(F.data.startswith("contactmethod:"))
-async def cb_contact_method(q: CallbackQuery):
-    _, method, code = q.data.split(":", 2)
-    t = TARIFFS.get(code)
-    if method not in {"telegram", "email"} or not t or t["price"] <= 0:
-        return await q.answer("Не удалось определить способ связи или тариф", show_alert=True)
-    if not PAYMENTS_ENABLED or not PAYMENT_PROVIDER_TOKEN:
-        return await q.answer("Оплата временно недоступна", show_alert=True)
-    user = get_user(q.from_user.id)
-    if user and user["blocked"]:
-        return await q.answer("Учётная запись заблокирована", show_alert=True)
-
-    if method == "email":
-        pending_email_tariffs[q.from_user.id] = code
-        await q.message.answer(
-            "Отправьте email для связи по этому заказу. Адрес будет сохранён вместе с данными платежа и использован для вопросов по оплате, возврату или спорной операции.\n\n"
-            "Чтобы отменить, отправьте /cancel.",
-            reply_markup=ForceReply(input_field_placeholder="name@example.com", selective=True),
+    payload = payment_payload(q.from_user.id, code)
+    uid, tariff_code, nonce = parse_payload(payload)
+    try:
+        await bot.send_invoice(
+            chat_id=q.from_user.id,
+            title=f"FatherVPN · {t['name']}",
+            description=f"Тестовая оплата FatherVPN на {t['days']} дней, до {MAX_DEVICES} устройств.",
+            payload=payload,
+            provider_token=PAYMENT_PROVIDER_TOKEN,
+            currency=PAYMENT_CURRENCY,
+            prices=[LabeledPrice(label=f"FatherVPN · {t['name']}", amount=t["price"] * 100)],
+            provider_data=paymaster_provider_data(uid, tariff_code, nonce),
+            start_parameter=f"fathervpn-{code}",
         )
-        await q.answer()
-        return
-
-    if not q.from_user.username:
-        return await q.answer("У аккаунта нет Telegram username. Выберите Email для связи.", show_alert=True)
-    contact_value = f"@{q.from_user.username}"
-    ok, error = await send_invoice_for_user(q.from_user.id, code, "telegram", contact_value)
-    if ok:
+        log_action(q.from_user.id, "invoice_created", "user", q.from_user.id, code)
         await q.answer("Счёт отправлен")
-    else:
-        await q.answer(error or "Не удалось создать счёт", show_alert=True)
+    except Exception as e:
+        print("invoice error:", repr(e))
+        await q.answer(f"Ошибка счёта: {type(e).__name__}", show_alert=True)
 
 
 @router.pre_checkout_query()
@@ -313,8 +189,6 @@ async def pre_checkout(pcq: PreCheckoutQuery):
     user = get_user(pcq.from_user.id)
     if uid != pcq.from_user.id:
         return await pcq.answer(ok=False, error_message="Счёт создан для другого пользователя")
-    if not get_pending_payment_contact(pcq.invoice_payload, uid):
-        return await pcq.answer(ok=False, error_message="Не найден контакт для связи по заказу. Создайте новый счёт.")
     if user and user["blocked"]:
         return await pcq.answer(ok=False, error_message="Учётная запись заблокирована")
     if pcq.currency != PAYMENT_CURRENCY or pcq.total_amount != t["price"] * 100:
@@ -499,29 +373,3 @@ async def cmd_users(message: Message):
     for u in rows:
         text.append(f"<code>{u['user_id']}</code> @{html.escape(u['username'] or '—')} · {html.escape(u['tariff'] or '—')} · {'⛔' if u['blocked'] else '✅'}")
     await message.answer("\n".join(text), parse_mode="HTML")
-
-
-@router.message(Command("cancel"))
-async def cmd_cancel(message: Message):
-    if message.from_user and pending_email_tariffs.pop(message.from_user.id, None):
-        await message.answer("Ввод email отменён. Счёт не создан.")
-    else:
-        await message.answer("Нет ожидающего ввода email.")
-
-
-@router.message(F.text)
-async def handle_pending_contact_email(message: Message):
-    if not message.from_user or not message.text:
-        return
-    user_id = message.from_user.id
-    code = pending_email_tariffs.get(user_id)
-    if not code:
-        return
-    email_value = message.text.strip()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email_value):
-        await message.answer("Не удалось распознать email. Проверьте адрес и отправьте его ещё раз, либо /cancel для отмены.")
-        return
-    pending_email_tariffs.pop(user_id, None)
-    ok, error = await send_invoice_for_user(user_id, code, "email", email_value)
-    if not ok:
-        await message.answer(error or "Не удалось создать счёт. Попробуйте позже.")
