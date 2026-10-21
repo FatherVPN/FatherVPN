@@ -25,11 +25,17 @@ PAYMENTS_ENABLED = os.environ.get("PAYMENTS_ENABLED", "true").lower() in {"1", "
 PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN", "").strip()
 PAYMENT_CURRENCY = os.environ.get("PAYMENT_CURRENCY", "RUB").upper()
 LEGAL_DOCUMENTS_ENABLED = os.environ.get("LEGAL_DOCUMENTS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+# Deliberately false until operator details and legal text have been reviewed.
+LEGAL_DOCUMENTS_APPROVED = False
 
 
 def legal_documents_available():
-    legal_dir = BASE_DIR / "legal"
-    return LEGAL_DOCUMENTS_ENABLED and (legal_dir / "privacy.html").is_file() and (legal_dir / "terms.html").is_file()
+    return (
+        LEGAL_DOCUMENTS_APPROVED
+        and LEGAL_DOCUMENTS_ENABLED
+        and (BASE_DIR / "privacy.html").is_file()
+        and (BASE_DIR / "terms.html").is_file()
+    )
 
 TARIFFS = {
     "1d": {"name": "1 день", "price": 0, "days": 1, "emoji": "🕐"},
