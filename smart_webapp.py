@@ -19,7 +19,7 @@ app = FastAPI(title="FatherVPN", version="7.0")
 # web process and requests the public health endpoint every five minutes.
 # It can reduce idle spin-downs, but Render does not guarantee this workaround.
 SELF_PING_INTERVAL_SECONDS = max(60, int(os.environ.get("SELF_PING_INTERVAL_SECONDS", "300")))
-SELF_PING_URL = (os.environ.get("RENDER_EXTERNAL_URL") or BASE_URL).rstrip("/") + "/health"
+SELF_PING_URL = (os.environ.get("RENDER_EXTERNAL_URL") or BASE_URL).rstrip("/") + "/"
 _self_ping_task: asyncio.Task | None = None
 
 
