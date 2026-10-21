@@ -349,6 +349,34 @@ def init_account_tables():
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_account_sessions_expiry ON account_sessions(expires_at)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_account_link_expiry ON account_link_tokens(expires_at)")
+
+        if DATABASE_URL:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS announcements(
+                    id BIGSERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_by BIGINT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                )
+                """
+            )
+        else:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS announcements(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_by INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                )
+                """
+            )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(active,created_at)")
         c.commit()
     finally:
         c.close()
@@ -356,6 +384,65 @@ def init_account_tables():
 
 init_db()
 init_account_tables()
+
+
+def create_announcement(title: str, body: str, created_by: int):
+    title = " ".join(str(title or "").split()).strip()[:120]
+    body = str(body or "").strip()[:3000]
+    if not title or not body:
+        raise ValueError("Для объявления нужны заголовок и текст.")
+    c = db()
+    try:
+        result = c.execute(
+            "INSERT INTO announcements(title,body,created_by,created_at,active) VALUES(?,?,?,?,1) RETURNING id",
+            (title, body, int(created_by), now_iso()),
+        )
+        row = result.fetchone()
+        c.commit()
+        return int(row["id"] if hasattr(row, "keys") else row[0])
+    finally:
+        c.close()
+
+
+def list_announcements(limit=5, active_only=True):
+    safe_limit = max(1, min(int(limit), 20))
+    c = db()
+    try:
+        if active_only:
+            result = c.execute(
+                "SELECT id,title,body,created_by,created_at,active FROM announcements WHERE active=1 ORDER BY id DESC LIMIT ?",
+                (safe_limit,),
+            )
+        else:
+            result = c.execute(
+                "SELECT id,title,body,created_by,created_at,active FROM announcements ORDER BY id DESC LIMIT ?",
+                (safe_limit,),
+            )
+        return result.fetchall()
+    finally:
+        c.close()
+
+
+def deactivate_announcement(announcement_id: int):
+    c = db()
+    try:
+        result = c.execute(
+            "UPDATE announcements SET active=0 WHERE id=? AND active=1",
+            (int(announcement_id),),
+        )
+        c.commit()
+        return result.rowcount > 0
+    finally:
+        c.close()
+
+
+def list_telegram_user_ids():
+    c = db()
+    try:
+        rows = c.execute("SELECT user_id FROM users ORDER BY user_id").fetchall()
+        return [int(row["user_id"] if hasattr(row, "keys") else row[0]) for row in rows]
+    finally:
+        c.close()
 
 
 def consume_account_link(token: str, telegram_id: int, username: str = "", first_name: str = ""):
