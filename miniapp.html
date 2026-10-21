@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080B14">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>FatherVPN · Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:#080b14;--panel:rgba(18,24,41,.82);--panel2:#121a2b;--line:rgba(166,185,255,.12);--text:#f5f7ff;--muted:#929bb6;--cyan:#70f2e4;--violet:#a995ff;--green:#71efb0;--danger:#ff8d9a;--shadow:0 22px 70px rgba(0,0,0,.32}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--bg)}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 10% 0%,rgba(77,93,201,.24),transparent 34%),radial-gradient(ellipse at 95% 18%,rgba(54,211,198,.12),transparent 29%),var(--bg);color:var(--text);font:15px/1.5 Manrope,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+button,a{font:inherit}
+button{color:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+.ambient{position:fixed;z-index:0;pointer-events:none;border-radius:50%;filter:blur(75px);opacity:.22}
+.ambient.a{width:230px;height:230px;background:#6254ff;top:23%;left:-140px}
+.ambient.b{width:210px;height:210px;background:#27d9c6;right:-135px;bottom:5%}
+.hidden{display:none!important}
+.shell{position:relative;z-index:1;width:min(100%,560px);margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.brand-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:16px;background:linear-gradient(140deg,#9d8cff,#57e9db);color:#0b1020;font-size:23px;font-weight:900;box-shadow:0 8px 30px rgba(104,120,255,.25)}
+.brand-copy{min-width:0;flex:1}
+.brand-copy strong{display:block;font-size:17px;font-weight:800;letter-spacing:-.04em}
+.brand-copy small{display:block;color:var(--muted);font-size:9px;letter-spacing:.2em;font-weight:800;margin-top:2px}
+.user-chip{display:flex;align-items:center;gap:8px;max-width:160px;padding:6px 10px 6px 6px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.035);font-size:11px;font-weight:700;color:#dce4ff}
+.avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#6657c9,#27bdb3);font-size:11px;color:#fff}
+.user-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.intro{margin:0 0 22px;padding:4px 2px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid rgba(112,242,228,.17);border-radius:999px;background:rgba(112,242,228,.06);color:var(--cyan);font-size:10px;letter-spacing:.13em;font-weight:800;text-transform:uppercase}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(113,239,176,.8)}
+h1{font-size:clamp(34px,8vw,48px);line-height:1.04;letter-spacing:-.065em;margin:18px 0 12px;font-weight:800}
+h1 span{background:linear-gradient(100deg,var(--cyan),#b9a6ff 80%);color:transparent;background-clip:text;-webkit-background-clip:text}
+.intro p{color:var(--muted);font-size:13px;line-height:1.75;margin:0;max-width:440px}
+.panel{border:1px solid var(--line);background:linear-gradient(145deg,rgba(21,29,49,.95),rgba(12,17,31,.94));border-radius:28px;box-shadow:var(--shadow);overflow:hidden}
+.main-panel{padding:22px;margin-bottom:14px;position:relative}
+.main-panel:before{content:"";position:absolute;top:-110px;right:-85px;width:220px;height:220px;border-radius:50%;background:rgba(112,242,228,.07);filter:blur(35px);pointer-events:none}
+.panel-head{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.label{font-size:10px;color:var(--muted);letter-spacing:.13em;text-transform:uppercase;font-weight:800}
+.panel-head h2{font-size:18px;letter-spacing:-.04em;margin:5px 0 0;font-weight:800}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border-radius:999px;background:rgba(113,239,176,.08);border:1px solid rgba(113,239,176,.15);color:var(--green);font-size:9px;font-weight:800;letter-spacing:.09em;white-space:nowrap}
+.pill .dot{width:5px;height:5px}
+.gauge-layout{position:relative;display:grid;grid-template-columns:174px 1fr;align-items:center;gap:18px;padding:24px 0 18px}
+.gauge{position:relative;width:174px;height:174px;display:grid;place-items:center}
+.gauge svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+.gauge circle{fill:none;stroke-width:8}
+.gauge .track{stroke:rgba(148,163,220,.12)}
+.gauge .progress{stroke:url(#ringGradient);stroke-linecap:round;stroke-dasharray:490.09;stroke-dashoffset:490.09;transition:stroke-dashoffset .55s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 7px rgba(112,242,228,.38))}
+.gauge-center{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge-center strong{font-size:39px;line-height:1;letter-spacing:-.07em;font-weight:800;font-variant-numeric:tabular-nums}
+.gauge-center span{color:var(--muted);font-size:10px;margin-top:8px}
+.gauge-center small{color:var(--cyan);font-size:9px;font-weight:800;letter-spacing:.12em;margin-top:4px}
+.mini-stat strong{display:block;font-size:25px;letter-spacing:-.06em;font-weight:800;font-variant-numeric:tabular-nums}
+.mini-stat small{color:var(--muted);font-size:11px}
+.mini-stat p{font-size:11px;line-height:1.7;color:#b2bad2;margin:10px 0 18px}
+.progress-info{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;color:var(--muted);margin-bottom:8px}
+.progress-info strong{color:#dfe6ff;font-variant-numeric:tabular-nums}
+.progress-track{height:5px;background:rgba(160,174,220,.12);border-radius:99px;overflow:hidden}
+.progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:inherit;transition:width .45s ease}
+.claim-button{position:relative;width:100%;min-height:76px;display:flex;align-items:center;gap:14px;padding:13px 17px;border:1px solid rgba(112,242,228,.35);border-radius:21px;background:linear-gradient(100deg,#75f2df,#9f9bff);color:#07101d;text-align:left;cursor:pointer;box-shadow:0 12px 30px rgba(85,203,200,.12);transition:transform .16s ease,filter .2s ease,opacity .2s ease}
+.claim-button:hover{filter:brightness(1.04)}
+.claim-button:active{transform:scale(.985)}
+.claim-button:disabled{cursor:not-allowed;opacity:.46;filter:saturate(.45);box-shadow:none}
+.plus{display:grid;place-items:center;width:44px;height:44px;flex:none;border-radius:15px;background:rgba(8,15,30,.11);font-size:30px;line-height:1;font-weight:500}
+.claim-copy{flex:1;min-width:0}
+.claim-copy strong{display:block;font-size:15px;font-weight:800;letter-spacing:-.03em}
+.claim-copy small{display:block;font-size:10px;opacity:.68;margin-top:3px}
+.arrow{font-size:20px;font-weight:700}
+.claim-button.busy .plus{animation:spin .7s linear infinite}
+.notice{display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding:12px 13px;border:1px solid rgba(169,149,255,.13);border-radius:15px;background:rgba(169,149,255,.055);color:#aeb8d4;font-size:10px;line-height:1.65}
+.notice-icon{color:var(--violet);font-size:15px;line-height:1}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.small-panel{padding:18px;min-width:0}
+.card-title{display:flex;align-items:center;gap:9px;color:#c8d0e9;font-size:11px;font-weight:700}
+.card-icon{display:grid;place-items:center;width:31px;height:31px;border-radius:11px;background:rgba(169,149,255,.12);color:var(--violet);font-size:16px}
+.access-state{display:flex;align-items:center;gap:8px;margin-top:17px;font-size:13px;font-weight:800;letter-spacing:-.03em}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+.status-dot.active{background:var(--green);box-shadow:0 0 12px rgba(113,239,176,.7)}
+.status-dot.blocked{background:var(--danger);box-shadow:0 0 12px rgba(255,141,154,.45)}
+.description{font-size:10px;line-height:1.7;color:var(--muted);margin:8px 0 16px;min-height:34px}
+.expiry-row{display:flex;flex-direction:column;gap:3px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.expiry-row span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
+.expiry-row strong{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.expiry-remaining{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;color:var(--muted);font-size:10px}
+.expiry-remaining strong{color:var(--cyan);font-variant-numeric:tabular-nums;font-size:11px}
+.secondary-button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035);color:var(--text);font-size:10px;font-weight:800;cursor:pointer;transition:background .2s ease}
+.secondary-button:hover{background:rgba(255,255,255,.07)}
+.secondary-button:disabled{opacity:.4;cursor:not-allowed}
+.cycle-label{margin-top:18px;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.11em;font-weight:800}
+.countdown{margin-top:5px;font-size:clamp(20px,4vw,26px);font-weight:800;letter-spacing:-.06em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cycle-copy{min-height:48px;color:var(--muted);font-size:10px;line-height:1.7;margin:9px 0 16px}
+.cycle-line{height:4px;border-radius:99px;background:rgba(160,174,220,.12);overflow:hidden}
+.cycle-line span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--violet),var(--cyan));transition:width .4s ease}
+.footer{padding:10px 4px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;color:#69738e;font-size:9px}
+.footer b{color:#a3adc9;letter-spacing:.08em}
+.toast{position:fixed;z-index:10;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));width:max-content;max-width:calc(100% - 32px);padding:12px 17px;border:1px solid rgba(112,242,228,.2);border-radius:14px;background:#172235;color:#eafdf9;box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:11px;font-weight:700;opacity:0;transform:translate(-50%,12px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.gate{position:relative;z-index:1;min-height:100vh;display:grid;place-items:center;padding:24px}
+.gate-card{width:min(100%,390px);padding:30px;border:1px solid var(--line);border-radius:28px;background:var(--panel);text-align:center;box-shadow:var(--shadow)}
+.gate-logo{width:64px;height:64px;margin:0 auto 18px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(140deg,#9d8cff,#57e9db);color:#0b1020;font-size:30px;font-weight:900}
+.gate h1{font-size:30px;margin:0 0 10px}
+.gate p{color:var(--muted);font-size:12px;line-height:1.8;margin:0 0 22px}
+.gate-link{display:flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border-radius:15px;background:linear-gradient(100deg,#75f2df,#9f9bff);color:#07101d;font-size:12px;font-weight:800;text-decoration:none}
+.gate-error{margin-top:14px;color:var(--danger);font-size:11px;line-height:1.7}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pop{0%{transform:scale(.98)}60%{transform:scale(1.015)}100%{transform:scale(1)}}
+.pop{animation:pop .25s ease}
+@media(max-width:410px){.shell{padding-left:13px;padding-right:13px}.main-panel{padding:17px}.gauge-layout{grid-template-columns:138px 1fr;gap:12px}.gauge{width:138px;height:138px}.gauge circle{stroke-width:9}.gauge-center strong{font-size:33px}.mini-stat strong{font-size:22px}.small-panel{padding:14px}.two-col{gap:9px}.countdown{font-size:20px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="ambient a"></div><div class="ambient b"></div>
+<section id="authGate" class="gate">
+  <div class="gate-card">
+    <div class="gate-logo">✦</div>
+    <h1>Father<span>VPN</span></h1>
+    <p>Личный VPN-кабинет открывается внутри Telegram. Запусти бота, нажми «Открыть приложение», и мы подтвердим твой аккаунт безопасно.</p>
+    <a class="gate-link" href="https://t.me/Father_VPNs_bot?start=miniapp">Открыть FatherVPN в Telegram ↗</a>
+    <div id="gateError" class="gate-error hidden"></div>
+  </div>
+</section>
+<main id="app" class="shell hidden">
+  <header class="topbar">
+    <div class="brand-icon">✦</div>
+    <div class="brand-copy"><strong>FatherVPN</strong><small>PRIVATE ACCESS SYSTEM</small></div>
+    <div class="user-chip"><span class="avatar" id="avatar">FV</span><span class="user-name" id="userName">Telegram</span></div>
+  </header>
+  <section class="intro">
+    <div class="eyebrow"><span class="dot"></span> Telegram mini app · secure</div>
+    <h1>Свобода<br><span>в каждом клике.</span></h1>
+    <p>Добавляй минуты к VPN-доступу одним касанием. Всё считается на сервере и сохраняется за твоим Telegram-аккаунтом.</p>
+  </section>
+  <section class="panel main-panel">
+    <div class="panel-head">
+      <div><div class="label">Твой бонусный цикл</div><h2>Время VPN</h2></div>
+      <div class="pill"><span class="dot"></span><span id="cyclePill">READY</span></div>
+    </div>
+    <div class="gauge-layout">
+      <div class="gauge">
+        <svg viewBox="0 0 180 180" aria-hidden="true">
+          <defs><linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#70f2e4"/><stop offset="100%" stop-color="#a995ff"/></linearGradient></defs>
+          <circle class="track" cx="90" cy="90" r="78"></circle>
+          <circle class="progress" id="progressRing" cx="90" cy="90" r="78"></circle>
+        </svg>
+        <div class="gauge-center"><strong id="minutesValue">0</strong><span>из 350 минут</span><small>НАЧИСЛЕНО</small></div>
+      </div>
+      <div class="mini-stat">
+        <strong><span id="earnedValue">0</span> <span style="font-size:12px;color:var(--muted);letter-spacing:0">мин</span></strong>
+        <small>добавлено в этом цикле</small>
+        <p>Каждое нажатие прибавляет ровно 1 минуту к сроку твоей VPN-подписки.</p>
+        <div class="progress-info"><span>Лимит цикла</span><strong id="progressLabel">0%</strong></div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+    </div>
+    <button class="claim-button" id="claimButton" type="button">
+      <span class="plus">+</span>
+      <span class="claim-copy"><strong>+1 минута</strong><small>Добавить время VPN-доступа</small></span>
+      <span class="arrow">↗</span>
+    </button>
+    <div class="notice"><span class="notice-icon">✦</span><span id="noticeText">Можно начислить до 350 минут за цикл. После лимита пополнение закрывается на 3 часа.</span></div>
+  </section>
+  <section class="two-col">
+    <article class="panel small-panel">
+      <div class="card-title"><span class="card-icon">◈</span><span>VPN-подписка</span></div>
+      <div class="access-state"><span class="status-dot" id="statusDot"></span><strong id="statusTitle">Проверяем доступ</strong></div>
+      <p class="description" id="statusDescription">Загружаем состояние подписки.</p>
+      <div class="expiry-row"><span>Доступ до</span><strong id="expiryDate">Проверяем…</strong></div>
+      <div class="expiry-remaining"><span>Осталось</span><strong id="expiryCountdown">--:--:--</strong></div>
+      <button class="secondary-button" id="openSubscription" type="button">Открыть подписку <span>↗</span></button>
+    </article>
+    <article class="panel small-panel">
+      <div class="card-title"><span class="card-icon">◷</span><span>Обновление цикла</span></div>
+      <div class="cycle-label" id="cooldownLabel">Пополнение доступно</div>
+      <div class="countdown" id="cooldownClock">ГОТОВО</div>
+      <p class="cycle-copy" id="cooldownDescription">Сейчас можно накапливать минуты. После 350 минут появится перерыв.</p>
+      <div class="cycle-line"><span id="cycleFill"></span></div>
+    </article>
+  </section>
+  <footer class="footer"><span><b>FATHERVPN</b> · PRIVATE BY DESIGN</span><span>Аккаунт <span id="telegramId">—</span></span></footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  var initData = tg && tg.initData ? tg.initData : "";
+  var state = null;
+  var serverOffset = 0;
+  var busy = false;
+  var cooldownRefresh = false;
+  var toastTimer = null;
+  var gate = document.getElementById("authGate");
+  var app = document.getElementById("app");
+  var gateError = document.getElementById("gateError");
+  var button = document.getElementById("claimButton");
+  var ring = document.getElementById("progressRing");
+  var circumference = 2 * Math.PI * 78;
+
+  if (tg) {
+    try { tg.ready(); tg.expand(); tg.setHeaderColor("#080B14"); tg.setBackgroundColor("#080B14"); } catch (e) {}
+  }
+
+  function serverNow(){ return Date.now() + serverOffset; }
+  function formatDuration(seconds){
+    seconds = Math.max(0, Math.floor(seconds || 0));
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+  }
+  function secondsUntil(value){
+    if (!value) return 0;
+    var stamp = Date.parse(value);
+    return Number.isFinite(stamp) ? Math.max(0, Math.floor((stamp - serverNow()) / 1000)) : 0;
+  }
+  function showToast(message){
+    var el = document.getElementById("toast");
+    el.textContent = message;
+    el.classList.add("show");
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function(){ el.classList.remove("show"); }, 2300);
+  }
+  function api(path, method){
+    return fetch(path, {
+      method: method || "GET",
+      headers: { "Authorization": "tma " + initData, "Accept": "application/json" }
+    }).then(function(response){
+      return response.json().catch(function(){ return {}; }).then(function(data){
+        if (!response.ok) {
+          var detail = data.detail;
+          var message = typeof detail === "string" ? detail : (detail && detail.message ? detail.message : "Не удалось выполнить запрос.");
+          var error = new Error(message);
+          error.status = response.status;
+          throw error;
+        }
+        return data;
+      });
+    });
+  }
+  function applyState(next){
+    state = next;
+    if (state.server_now) serverOffset = Date.parse(state.server_now) - Date.now();
+    render();
+  }
+  function render(){
+    if (!state) return;
+    var minutes = Number(state.cycle_minutes || 0);
+    var max = Number(state.max_cycle_minutes || 350);
+    var ratio = Math.min(1, minutes / max);
+    var cooldown = secondsUntil(state.cooldown_until);
+    var expiry = secondsUntil(state.expires_at);
+    var canClick = !state.blocked && cooldown === 0 && minutes < max && !busy;
+
+    document.getElementById("minutesValue").textContent = String(minutes);
+    document.getElementById("earnedValue").textContent = String(minutes);
+    document.getElementById("progressLabel").textContent = Math.round(ratio * 100) + "%";
+    document.getElementById("progressFill").style.width = (ratio * 100) + "%";
+    document.getElementById("cycleFill").style.width = (ratio * 100) + "%";
+    ring.style.strokeDasharray = String(circumference);
+    ring.style.strokeDashoffset = String(circumference * (1 - ratio));
+
+    var displayName = state.first_name || state.username || "Пользователь";
+    document.getElementById("userName").textContent = displayName;
+    document.getElementById("avatar").textContent = (displayName.trim().charAt(0) || "F").toUpperCase();
+    document.getElementById("telegramId").textContent = String(state.telegram_id || "—");
+
+    var blocked = !!state.blocked;
+    var active = !!state.subscription_active;
+    var dot = document.getElementById("statusDot");
+    dot.className = "status-dot" + (blocked ? " blocked" : (active ? " active" : ""));
+    document.getElementById("statusTitle").textContent = blocked ? "Доступ заблокирован" : (active ? "VPN-доступ активен" : "VPN-доступ не активен");
+    document.getElementById("statusDescription").textContent = blocked
+      ? "Обратись в поддержку FatherVPN для уточнения статуса."
+      : (active ? "Подписка действует. Открой ссылку и добавь её в VPN-клиент."
+        : "Начисли первую минуту, чтобы активировать короткий тестовый доступ.");
+    document.getElementById("expiryDate").textContent = state.expires_at
+      ? new Date(state.expires_at).toLocaleString("ru-RU", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })
+      : "Нет активного срока";
+    document.getElementById("expiryCountdown").textContent = expiry > 0 ? formatDuration(expiry) : "00:00:00";
+    document.getElementById("openSubscription").disabled = !state.subscription_url;
+
+    button.disabled = !canClick;
+    button.classList.toggle("busy", busy);
+    document.getElementById("cyclePill").textContent = blocked ? "BLOCKED" : (cooldown > 0 ? "COOLDOWN" : (minutes >= max ? "WAIT" : "READY"));
+    document.getElementById("noticeText").textContent = blocked
+      ? "Начисление минут недоступно для заблокированного аккаунта."
+      : (cooldown > 0
+        ? "Лимит 350 минут достигнут. Дождись окончания обратного отсчёта, и новый цикл откроется автоматически."
+        : "Можно начислить до 350 минут за цикл. После лимита пополнение закрывается на 3 часа.");
+
+    if (cooldown > 0) {
+      document.getElementById("cooldownLabel").textContent = "Следующий цикл через";
+      document.getElementById("cooldownClock").textContent = formatDuration(cooldown);
+      document.getElementById("cooldownDescription").textContent = "Лимит достигнут. Пополнение снова откроется, когда обратный отсчёт закончится.";
+    } else {
+      document.getElementById("cooldownLabel").textContent = "Пополнение доступно";
+      document.getElementById("cooldownClock").textContent = blocked ? "НЕДОСТУПНО" : "ГОТОВО";
+      document.getElementById("cooldownDescription").textContent = blocked
+        ? "Для этого аккаунта начисление отключено."
+        : "До лимита осталось " + Math.max(0, max - minutes) + " минут. После 350 минут начнётся перерыв на 3 часа.";
+    }
+  }
+  function loadState(){
+    return api("/api/miniapp/state").then(applyState).catch(function(error){
+      if (error.status === 401 || error.status === 503) {
+        gate.classList.remove("hidden");
+        app.classList.add("hidden");
+        gateError.textContent = error.message;
+        gateError.classList.remove("hidden");
+      } else {
+        showToast(error.message);
+      }
+      throw error;
+    });
+  }
+  button.addEventListener("click", function(){
+    if (!state || busy || button.disabled) return;
+    busy = true;
+    render();
+    if (tg && tg.HapticFeedback) {
+      try { tg.HapticFeedback.impactOccurred("light"); } catch (e) {}
+    }
+    api("/api/miniapp/click", "POST").then(function(next){
+      applyState(next);
+      if (tg && tg.HapticFeedback) {
+        try { tg.HapticFeedback.notificationOccurred("success"); } catch (e) {}
+      }
+      showToast("+1 минута добавлена к VPN-доступу");
+    }).catch(function(error){
+      showToast(error.message);
+      return loadState().catch(function(){});
+    }).finally(function(){
+      busy = false;
+      render();
+    });
+  });
+  document.getElementById("openSubscription").addEventListener("click", function(){
+    if (!state || !state.subscription_url) return;
+    if (tg && typeof tg.openLink === "function") tg.openLink(state.subscription_url);
+    else window.open(state.subscription_url, "_blank", "noopener,noreferrer");
+  });
+
+  if (!initData) {
+    gate.classList.remove("hidden");
+    app.classList.add("hidden");
+  } else {
+    gate.classList.add("hidden");
+    app.classList.remove("hidden");
+    loadState().catch(function(){});
+  }
+
+  window.setInterval(function(){
+    if (!state) return;
+    render();
+    if (state.cooldown_until && secondsUntil(state.cooldown_until) === 0 && !cooldownRefresh) {
+      cooldownRefresh = true;
+      loadState().catch(function(){}).finally(function(){ cooldownRefresh = false; });
+    }
+  }, 1000);
+})();
+</script>
+</body>
+</html>
