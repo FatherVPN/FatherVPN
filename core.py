@@ -24,6 +24,18 @@ PORT = int(os.environ.get("PORT", "8080") or "8080")
 PAYMENTS_ENABLED = os.environ.get("PAYMENTS_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN", "").strip()
 PAYMENT_CURRENCY = os.environ.get("PAYMENT_CURRENCY", "RUB").upper()
+LEGAL_DOCUMENTS_ENABLED = os.environ.get("LEGAL_DOCUMENTS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+# Deliberately false until operator details and legal text have been reviewed.
+LEGAL_DOCUMENTS_APPROVED = False
+
+
+def legal_documents_available():
+    return (
+        LEGAL_DOCUMENTS_APPROVED
+        and LEGAL_DOCUMENTS_ENABLED
+        and (BASE_DIR / "privacy.html").is_file()
+        and (BASE_DIR / "terms.html").is_file()
+    )
 
 TARIFFS = {
     "1d": {"name": "1 день", "price": 0, "days": 1, "emoji": "🕐"},
@@ -186,7 +198,9 @@ def init_db():
                     blocked INTEGER NOT NULL DEFAULT 0,
                     cabinet_token TEXT UNIQUE,
                     legacy_token TEXT,
-                    subscription_token TEXT UNIQUE
+                    subscription_token TEXT UNIQUE,
+                    contact_method TEXT,
+                    contact_value TEXT
                 )
                 """
             )
@@ -201,6 +215,19 @@ def init_db():
                     tariff_code TEXT NOT NULL,
                     currency TEXT NOT NULL,
                     amount INTEGER NOT NULL,
+                    contact_method TEXT,
+                    contact_value TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pending_payment_contacts(
+                    payload TEXT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    contact_method TEXT NOT NULL,
+                    contact_value TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -237,8 +264,13 @@ def init_db():
             )
             c.execute("CREATE INDEX IF NOT EXISTS idx_subscription_clients_user_time ON subscription_clients(user_id,last_seen)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_pending_payment_contacts_user ON pending_payment_contacts(user_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_expires_at ON users(expires_at)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(blocked)")
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_method TEXT")
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_value TEXT")
+            c.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS contact_method TEXT")
+            c.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS contact_value TEXT")
             c.commit()
         else:
             c.execute("PRAGMA journal_mode=WAL")
@@ -254,7 +286,9 @@ def init_db():
                     blocked INTEGER NOT NULL DEFAULT 0,
                     cabinet_token TEXT,
                     legacy_token TEXT,
-                    subscription_token TEXT
+                    subscription_token TEXT,
+                    contact_method TEXT,
+                    contact_value TEXT
                 );
                 CREATE TABLE IF NOT EXISTS payments(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -265,6 +299,8 @@ def init_db():
                     tariff_code TEXT NOT NULL,
                     currency TEXT NOT NULL,
                     amount INTEGER NOT NULL,
+                    contact_method TEXT,
+                    contact_value TEXT,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS audit_log(
@@ -293,6 +329,8 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
                 """
             )
+            c.execute("""CREATE TABLE IF NOT EXISTS pending_payment_contacts(payload TEXT PRIMARY KEY,user_id BIGINT NOT NULL,contact_method TEXT NOT NULL,contact_value TEXT NOT NULL,created_at TEXT NOT NULL)""")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_pending_payment_contacts_user ON pending_payment_contacts(user_id)")
             cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
             for col, sql in {
                 "blocked": "ALTER TABLE users ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
@@ -301,8 +339,17 @@ def init_db():
                 "tariff": "ALTER TABLE users ADD COLUMN tariff TEXT",
                 "expires_at": "ALTER TABLE users ADD COLUMN expires_at TEXT",
                 "subscription_token": "ALTER TABLE users ADD COLUMN subscription_token TEXT",
+                "contact_method": "ALTER TABLE users ADD COLUMN contact_method TEXT",
+                "contact_value": "ALTER TABLE users ADD COLUMN contact_value TEXT",
             }.items():
                 if col not in cols:
+                    c.execute(sql)
+            payment_cols = {r[1] for r in c.execute("PRAGMA table_info(payments)")}
+            for col, sql in {
+                "contact_method": "ALTER TABLE payments ADD COLUMN contact_method TEXT",
+                "contact_value": "ALTER TABLE payments ADD COLUMN contact_value TEXT",
+            }.items():
+                if col not in payment_cols:
                     c.execute(sql)
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_cabinet_token ON users(cabinet_token)")
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_subscription_token ON users(subscription_token)")
@@ -359,6 +406,69 @@ def upsert_user(uid, username="", first_name=""):
             """,
             (int(uid), username or "", first_name or "", now_iso()),
         )
+        c.commit()
+    finally:
+        c.close()
+
+
+def set_user_contact(uid, method, value):
+    if method not in {"telegram", "email"}:
+        raise ValueError("Unsupported contact method")
+    clean_value = str(value or "").strip()
+    if not clean_value:
+        raise ValueError("Contact value is required")
+    if not get_user(uid):
+        upsert_user(uid)
+    c = db()
+    try:
+        c.execute(
+            "UPDATE users SET contact_method=?,contact_value=? WHERE user_id=?",
+            (method, clean_value, int(uid)),
+        )
+        c.commit()
+    finally:
+        c.close()
+
+
+def save_pending_payment_contact(payload, uid, method, value):
+    if method not in {"telegram", "email"} or not str(value or "").strip():
+        raise ValueError("A valid payment contact is required")
+    c = db()
+    try:
+        cutoff = (utc_now() - timedelta(days=7)).isoformat()
+        c.execute("DELETE FROM pending_payment_contacts WHERE created_at<?", (cutoff,))
+        c.execute(
+            """
+            INSERT INTO pending_payment_contacts(payload,user_id,contact_method,contact_value,created_at)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(payload) DO UPDATE SET
+                user_id=excluded.user_id,
+                contact_method=excluded.contact_method,
+                contact_value=excluded.contact_value,
+                created_at=excluded.created_at
+            """,
+            (str(payload), int(uid), method, str(value).strip(), now_iso()),
+        )
+        c.commit()
+    finally:
+        c.close()
+
+
+def get_pending_payment_contact(payload, uid):
+    c = db()
+    try:
+        return c.execute(
+            "SELECT * FROM pending_payment_contacts WHERE payload=? AND user_id=?",
+            (str(payload), int(uid)),
+        ).fetchone()
+    finally:
+        c.close()
+
+
+def delete_pending_payment_contact(payload):
+    c = db()
+    try:
+        c.execute("DELETE FROM pending_payment_contacts WHERE payload=?", (str(payload),))
         c.commit()
     finally:
         c.close()
@@ -593,6 +703,14 @@ def fulfill_payment(uid, code, sp):
             c.rollback()
             return None, False
 
+        pending_contact = c.execute(
+            "SELECT * FROM pending_payment_contacts WHERE payload=? AND user_id=?",
+            (sp.invoice_payload, int(uid)),
+        ).fetchone()
+        if not pending_contact or pending_contact["contact_method"] not in {"telegram", "email"} or not pending_contact["contact_value"]:
+            c.rollback()
+            return None, False
+
         user = c.execute("SELECT * FROM users WHERE user_id=?", (int(uid),)).fetchone()
         if not user:
             c.execute(
@@ -612,8 +730,8 @@ def fulfill_payment(uid, code, sp):
         c.execute(
             """
             INSERT INTO payments(
-                user_id,telegram_charge_id,provider_charge_id,payload,tariff_code,currency,amount,created_at
-            ) VALUES(?,?,?,?,?,?,?,?)
+                user_id,telegram_charge_id,provider_charge_id,payload,tariff_code,currency,amount,contact_method,contact_value,created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 int(uid),
@@ -623,9 +741,12 @@ def fulfill_payment(uid, code, sp):
                 code,
                 sp.currency,
                 int(sp.total_amount),
+                pending_contact["contact_method"],
+                pending_contact["contact_value"],
                 now_iso(),
             ),
         )
+        c.execute("DELETE FROM pending_payment_contacts WHERE payload=?", (sp.invoice_payload,))
         c.commit()
         return expires, True
     except Exception:
