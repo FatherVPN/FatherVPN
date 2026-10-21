@@ -73,9 +73,9 @@ async def profile(q:CallbackQuery):
 async def helpme(q:CallbackQuery):await q.message.edit_text('📖 <b>Как подключиться</b>\n\n1. Купите подписку.\n2. Бот сразу выдаст персональную ссылку.\n3. Откройте её в браузере — увидите QR-код и статус подписки.\n4. Добавьте эту же ссылку в VPN-клиент или отсканируйте QR.\n\nОтдельного RAW-адреса в интерфейсе нет.',reply_markup=ik([[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
 def info_text():
     return (
-        'ℹ️ <b>Информация о FatherVPN</b>\\n\\n'
+        'ℹ️ <b>Информация о FatherVPN</b>\n\n'
         'FatherVPN предоставляет VPN-подписку, персональную ссылку и QR-код. '
-        'Перед использованием ознакомьтесь с документами ниже.\\n\\n'
+        'Перед использованием ознакомьтесь с документами ниже.\n\n'
         'По вопросам обработки данных, подписки и работы сервиса: '
         '<a href="https://t.me/Father_vpn_support">@Father_vpn_support</a>.'
     )
