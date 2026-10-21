@@ -311,9 +311,101 @@ def init_db():
         c.close()
 
 
+def init_account_tables():
+    c = db()
+    try:
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_users(
+                email TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                telegram_id BIGINT UNIQUE,
+                telegram_username TEXT,
+                telegram_first_name TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_sessions(
+                session_hash TEXT PRIMARY KEY,
+                email TEXT NOT NULL REFERENCES account_users(email) ON DELETE CASCADE,
+                csrf_token TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS account_link_tokens(
+                token_hash TEXT PRIMARY KEY,
+                email TEXT NOT NULL REFERENCES account_users(email) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL,
+                used_at TEXT
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_account_sessions_expiry ON account_sessions(expires_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_account_link_expiry ON account_link_tokens(expires_at)")
+        c.commit()
+    finally:
+        c.close()
+
+
 init_db()
+init_account_tables()
 
 
+def consume_account_link(token: str, telegram_id: int, username: str = "", first_name: str = ""):
+    if not token or len(token) > 100 or telegram_id <= 0:
+        return False, "", "Ссылка привязки некорректна."
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = now_iso()
+    c = db()
+    try:
+        link = c.execute(
+            "SELECT email FROM account_link_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?",
+            (token_hash, now),
+        ).fetchone()
+        if not link:
+            return False, "", "Ссылка устарела или уже использована. Создайте новую в кабинете."
+        email = str(link["email"])
+        current = c.execute(
+            "SELECT telegram_id FROM account_users WHERE email=?",
+            (email,),
+        ).fetchone()
+        if not current:
+            return False, "", "Аккаунт не найден. Войдите на сайт и попробуйте ещё раз."
+        if current["telegram_id"] is not None and int(current["telegram_id"]) != telegram_id:
+            return False, "", "К этому аккаунту уже привязан другой Telegram."
+        other = c.execute(
+            "SELECT email FROM account_users WHERE telegram_id=? AND email<>?",
+            (telegram_id, email),
+        ).fetchone()
+        if other:
+            return False, "", "Этот Telegram уже привязан к другому аккаунту FatherVPN."
+        changed = c.execute(
+            "UPDATE account_users SET telegram_id=?, telegram_username=?, telegram_first_name=?, updated_at=? WHERE email=?",
+            (telegram_id, (username or "").strip()[:64], (first_name or "").strip()[:128], now, email),
+        )
+        if changed.rowcount != 1:
+            return False, "", "Не удалось обновить аккаунт. Попробуйте ещё раз."
+        marked = c.execute(
+            "UPDATE account_link_tokens SET used_at=? WHERE token_hash=? AND used_at IS NULL",
+            (now, token_hash),
+        )
+        if marked.rowcount != 1:
+            c.rollback()
+            return False, "", "Ссылка уже использована. Создайте новую в кабинете."
+        c.commit()
+        return True, email, ""
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
 def get_user(uid):
     c = db()
     try:
