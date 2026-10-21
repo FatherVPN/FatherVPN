@@ -142,7 +142,7 @@ async def cb_info(q:CallbackQuery):
 @router.callback_query(F.data=='admin')
 async def admin(q:CallbackQuery):
     if q.from_user.id!=ADMIN_ID:return await q.answer('Нет доступа',show_alert=True)
-    await q.message.edit_text('🛠 <b>Администрирование FatherVPN</b>\n\nВ веб-панели есть поиск пользователей, статистика, платежи, выдача тарифов, блокировки и смена персональной ссылки.\n\nКоманды тоже работают:\\n<code>/grant ID 1d|7d|1m|3m|6m|12m</code>\\n<code>/block ID</code>\\n<code>/unblock ID</code>\\n<code>/announce Заголовок | Текст</code>\\n<code>/announce_off ID</code>',reply_markup=ik([[InlineKeyboardButton(text='🛠 Открыть веб-админку',url=admin_web_url())],[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
+    await q.message.edit_text('🛠 <b>Администрирование FatherVPN</b>\n\nВ веб-панели есть поиск пользователей, статистика, платежи, выдача тарифов, блокировки и смена персональной ссылки.\n\nКоманды тоже работают:\n<code>/grant ID 1d|7d|1m|3m|6m|12m</code>\n<code>/block ID</code>\n<code>/unblock ID</code>\n<code>/announce Заголовок | Текст</code>\n<code>/announce_off ID</code>',reply_markup=ik([[InlineKeyboardButton(text='🛠 Открыть веб-админку',url=admin_web_url())],[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
 async def _broadcast_announcement(title, body):
     text=f'📣 <b>Объявление FatherVPN</b>\\n\\n<b>{html.escape(title)}</b>\\n\\n{html.escape(body)}'
     sent=0
