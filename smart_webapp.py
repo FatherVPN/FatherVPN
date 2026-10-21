@@ -245,6 +245,9 @@ def _account_page(title: str, body: str, message: str = "", error: bool = False)
     if message:
         color = "var(--danger)" if error else "var(--success)"
         notice = f'<div class="notice" style="color:{color}">{esc(message)}</div>'
+    if error and not body:
+        target = "/register" if title == "Создать аккаунт" else ("/login" if title == "Вход в аккаунт" else "/account")
+        body = f'<p><a class="link" href="{target}">Вернуться к форме</a></p>'
     return f"""<!doctype html>
 <html lang="ru" data-theme="system">
 <head>
