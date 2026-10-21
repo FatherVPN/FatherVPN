@@ -1,3 +1,4 @@
+import asyncio
 import html
 import os
 
@@ -5,15 +6,24 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery, WebAppInfo
 
-from core import ADMIN_ID, BASE_URL, BOT_TOKEN, PAYMENT_CURRENCY, PAYMENT_PROVIDER_TOKEN, PAYMENTS_ENABLED, TARIFFS, consume_account_link, ensure_cabinet_token, fmt_dt, fulfill_payment, get_user, grant_subscription, log_action, parse_payload, payment_payload, paymaster_provider_data, resolve_target, set_user_blocked, subscription_active, subscription_url, upsert_user
+from core import ADMIN_ID, BASE_URL, BOT_TOKEN, PAYMENT_CURRENCY, PAYMENT_PROVIDER_TOKEN, PAYMENTS_ENABLED, TARIFFS, consume_account_link, create_announcement, deactivate_announcement, ensure_cabinet_token, fmt_dt, fulfill_payment, get_user, grant_subscription, list_announcements, list_telegram_user_ids, log_action, parse_payload, payment_payload, paymaster_provider_data, resolve_target, set_user_blocked, subscription_active, subscription_url, upsert_user
 
 bot=Bot(BOT_TOKEN or '1:TEST');dp=Dispatcher();router=Router();dp.include_router(router)
 ADMIN_WEB_TOKEN=os.environ.get('ADMIN_WEB_TOKEN','').strip()
 def ik(rows):return InlineKeyboardMarkup(inline_keyboard=rows)
 def admin_web_url():return f'{BASE_URL}/admin/login/{ADMIN_WEB_TOKEN}' if ADMIN_WEB_TOKEN else f'{BASE_URL}/admin/login'
+def has_paid_subscription(uid):
+    user=get_user(uid)
+    return bool(user and user['tariff'] and any(t['price']>0 and t['name']==user['tariff'] for t in TARIFFS.values()))
+
 def menu(uid):
-    cabinet=ensure_cabinet_token(uid);rows=[[InlineKeyboardButton(text='✨ Открыть FatherVPN',web_app=WebAppInfo(url=f'{BASE_URL}/miniapp'))],[InlineKeyboardButton(text='🚀 Купить VPN',callback_data='buy')],[InlineKeyboardButton(text='👤 Моя подписка',callback_data='profile')],[InlineKeyboardButton(text='🌐 Страница подписки',url=f'{BASE_URL}/cabinet/{cabinet}')],[InlineKeyboardButton(text='👤 Аккаунт на сайте',url=f'{BASE_URL}/account')],[InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')],[InlineKeyboardButton(text='ℹ️ Информация и документы',callback_data='info')]]
-    if int(uid)==ADMIN_ID:rows.append([InlineKeyboardButton(text='🛠 Веб-админка',url=admin_web_url()),InlineKeyboardButton(text='⚙️ Команды',callback_data='admin')])
+    cabinet=ensure_cabinet_token(uid)
+    buy_label='🔄 Продлить VPN' if has_paid_subscription(uid) else '🚀 Купить VPN'
+    rows=[
+        [InlineKeyboardButton(text='✨ Открыть FatherVPN',web_app=WebAppInfo(url=f'{BASE_URL}/miniapp'))],
+        [InlineKeyboardButton(text=buy_label,callback_data='buy'),InlineKeyboardButton(text='👤 Подписка',callback_data='profile')],
+        [InlineKeyboardButton(text='📣 Объявления',callback_data='announcements'),InlineKeyboardButton(text='☰ Ещё',callback_data='more')],
+    ]
     return ik(rows)
 def plans():
     rows=[]
@@ -38,6 +48,32 @@ async def start(m:Message,command:CommandObject):
     await m.answer('☁️ <b>FatherVPN</b>\nОдна подписка — одна персональная ссылка. После оплаты ссылка и QR-код появляются автоматически.',reply_markup=menu(u.id),parse_mode='HTML')
 @router.callback_query(F.data=='menu')
 async def cb_menu(q:CallbackQuery):await q.message.edit_text('☁️ <b>FatherVPN</b>\nГлавное меню',reply_markup=menu(q.from_user.id),parse_mode='HTML');await q.answer()
+@router.callback_query(F.data=='more')
+async def cb_more(q:CallbackQuery):
+    rows=[
+        [InlineKeyboardButton(text='👤 Аккаунт на сайте',url=f'{BASE_URL}/account')],
+        [InlineKeyboardButton(text='📖 Инструкция',callback_data='help'),InlineKeyboardButton(text='🆘 Поддержка',url='https://t.me/Father_vpn_support')],
+        [InlineKeyboardButton(text='ℹ️ Документы',callback_data='info')],
+    ]
+    if q.from_user.id==ADMIN_ID:
+        rows.append([InlineKeyboardButton(text='🛠 Администрирование',callback_data='admin')])
+    rows.append([InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')])
+    await q.message.edit_text('☰ <b>Ещё</b>\\nАккаунт, помощь и настройки FatherVPN.',reply_markup=ik(rows),parse_mode='HTML')
+    await q.answer()
+
+@router.callback_query(F.data=='announcements')
+async def cb_announcements(q:CallbackQuery):
+    items=list_announcements(5)
+    if not items:
+        body='📣 <b>Объявления</b>\\n\\nПока новых объявлений нет. Когда появятся важные новости сервиса, они будут здесь.'
+    else:
+        parts=['📣 <b>Объявления FatherVPN</b>']
+        for item in items:
+            parts.append(f"\\n<b>{html.escape(str(item['title']))}</b>\\n{html.escape(str(item['body']))}\\n<i>{html.escape(fmt_dt(item['created_at']))}</i>")
+        body='\\n'.join(parts)
+    await q.message.edit_text(body,reply_markup=ik([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')]]),parse_mode='HTML')
+    await q.answer()
+
 @router.callback_query(F.data=='buy')
 async def cb_buy(q:CallbackQuery):await q.message.edit_text('🚀 <b>Выберите тариф</b>\nПосле успешной оплаты доступ активируется автоматически.',reply_markup=plans(),parse_mode='HTML');await q.answer()
 @router.callback_query(F.data.startswith('tariff:'))
@@ -107,6 +143,51 @@ async def cb_info(q:CallbackQuery):
 async def admin(q:CallbackQuery):
     if q.from_user.id!=ADMIN_ID:return await q.answer('Нет доступа',show_alert=True)
     await q.message.edit_text('🛠 <b>Администрирование FatherVPN</b>\n\nВ веб-панели есть поиск пользователей, статистика, платежи, выдача тарифов, блокировки и смена персональной ссылки.\n\nКоманды тоже работают:\n<code>/grant ID 1d|7d|1m|3m|6m|12m</code>\n<code>/block ID</code>\n<code>/unblock ID</code>',reply_markup=ik([[InlineKeyboardButton(text='🛠 Открыть веб-админку',url=admin_web_url())],[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
+async def _broadcast_announcement(title, body):
+    text=f'📣 <b>Объявление FatherVPN</b>\\n\\n<b>{html.escape(title)}</b>\\n\\n{html.escape(body)}'
+    sent=0
+    failed=0
+    for uid in list_telegram_user_ids():
+        try:
+            await bot.send_message(uid,text,parse_mode='HTML',disable_web_page_preview=True)
+            sent+=1
+        except Exception as exc:
+            failed+=1
+            if failed<=3:
+                print('announcement delivery error:',repr(exc))
+        await asyncio.sleep(0.05)
+    print(f'announcement broadcast complete: sent={sent}, failed={failed}')
+
+@router.message(Command('announce'))
+async def announce_command(m:Message,command:CommandObject):
+    if m.from_user.id!=ADMIN_ID:
+        return
+    raw=(command.args or '').strip()
+    if '|' not in raw:
+        return await m.answer('Формат: /announce Заголовок | Текст объявления')
+    title,body=(part.strip() for part in raw.split('|',1))
+    if not title or not body:
+        return await m.answer('Нужны и заголовок, и текст.\\nПример: /announce Плановые работы | Сегодня в 23:00 возможен перерыв.')
+    try:
+        announcement_id=create_announcement(title,body,m.from_user.id)
+    except ValueError as exc:
+        return await m.answer(html.escape(str(exc)))
+    await m.answer(f'✅ Объявление #{announcement_id} опубликовано на сайте и в боте.\\nНачинаю рассылку пользователям.\\n\\nДля снятия с публикации: <code>/announce_off {announcement_id}</code>',parse_mode='HTML')
+    asyncio.create_task(_broadcast_announcement(title,body))
+
+@router.message(Command('announce_off'))
+async def announce_off_command(m:Message,command:CommandObject):
+    if m.from_user.id!=ADMIN_ID:
+        return
+    try:
+        announcement_id=int((command.args or '').strip())
+    except ValueError:
+        return await m.answer('Использование: /announce_off ID')
+    if deactivate_announcement(announcement_id):
+        await m.answer(f'✅ Объявление #{announcement_id} снято с публикации на сайте и в боте.')
+    else:
+        await m.answer('Активное объявление с таким ID не найдено.')
+
 @router.message(Command('grant'))
 async def grant(m:Message,command:CommandObject):
     if m.from_user.id!=ADMIN_ID:return
