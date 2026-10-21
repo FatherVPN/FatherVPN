@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery, WebAppInfo
 
-from core import ADMIN_ID, BASE_URL, BOT_TOKEN, PAYMENT_CURRENCY, PAYMENT_PROVIDER_TOKEN, PAYMENTS_ENABLED, TARIFFS, ensure_cabinet_token, fmt_dt, fulfill_payment, get_user, grant_subscription, log_action, parse_payload, payment_payload, paymaster_provider_data, resolve_target, set_user_blocked, subscription_active, subscription_url, upsert_user
+from core import ADMIN_ID, BASE_URL, BOT_TOKEN, PAYMENT_CURRENCY, PAYMENT_PROVIDER_TOKEN, PAYMENTS_ENABLED, TARIFFS, consume_account_link, ensure_cabinet_token, fmt_dt, fulfill_payment, get_user, grant_subscription, log_action, parse_payload, payment_payload, paymaster_provider_data, resolve_target, set_user_blocked, subscription_active, subscription_url, upsert_user
 
 bot=Bot(BOT_TOKEN or '1:TEST');dp=Dispatcher();router=Router();dp.include_router(router)
 ADMIN_WEB_TOKEN=os.environ.get('ADMIN_WEB_TOKEN','').strip()
@@ -24,7 +24,18 @@ def access(uid):
     url=subscription_url(uid);return f'🔗 <b>Ваша персональная ссылка:</b>\n<code>{html.escape(url)}</code>\n\nОткройте её в браузере — там будет QR-код и удобная панель. Эту же ссылку добавляйте в VPN-клиент.',ik([[InlineKeyboardButton(text='🌐 Открыть подписку и QR',url=url)],[InlineKeyboardButton(text='⬅️ В меню',callback_data='menu')]])
 @router.message(CommandStart())
 async def start(m:Message,command:CommandObject):
-    u=m.from_user;upsert_user(u.id,u.username or '',u.first_name or '');ensure_cabinet_token(u.id);await m.answer('☁️ <b>FatherVPN</b>\nОдна подписка — одна персональная ссылка. После оплаты ссылка и QR-код появляются автоматически.',reply_markup=menu(u.id),parse_mode='HTML')
+    u=m.from_user
+    upsert_user(u.id,u.username or '',u.first_name or '')
+    ensure_cabinet_token(u.id)
+    payload=(command.args or '').strip()
+    if payload.startswith('link_'):
+        linked,email,error=consume_account_link(payload[5:],u.id,u.username or '',u.first_name or '')
+        if linked:
+            await m.answer(f'✅ <b>Telegram привязан!</b>\nАккаунт: <code>{html.escape(email)}</code>\n\nТеперь подписка и данные Telegram доступны в личном кабинете FatherVPN.',reply_markup=menu(u.id),parse_mode='HTML')
+        else:
+            await m.answer(f'⚠️ <b>Не удалось привязать Telegram</b>\n{html.escape(error)}',reply_markup=menu(u.id),parse_mode='HTML')
+        return
+    await m.answer('☁️ <b>FatherVPN</b>\nОдна подписка — одна персональная ссылка. После оплаты ссылка и QR-код появляются автоматически.',reply_markup=menu(u.id),parse_mode='HTML')
 @router.callback_query(F.data=='menu')
 async def cb_menu(q:CallbackQuery):await q.message.edit_text('☁️ <b>FatherVPN</b>\nГлавное меню',reply_markup=menu(q.from_user.id),parse_mode='HTML');await q.answer()
 @router.callback_query(F.data=='buy')
