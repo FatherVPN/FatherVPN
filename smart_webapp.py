@@ -9,7 +9,7 @@ import qrcode
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
+from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, legal_documents_available, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
 
 app = FastAPI(title="FatherVPN", version="7.0")
 ADMIN_WEB_TOKEN = os.environ.get("ADMIN_WEB_TOKEN", "").strip()
@@ -103,21 +103,48 @@ async def home():
 @app.get('/health')
 async def health():return {'ok':bool(active_servers()),'version':'7.0','admin':bool(ADMIN_WEB_TOKEN)}
 
+def legal_pending_page(title: str) -> str:
+    return f"""<!doctype html>
+<html lang="ru" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FEF7FF">
+<title>{title} · FatherVPN</title>
+</head>
+<body style="margin:0;background:#FEF7FF;color:#1D1B20;font:16px/1.6 Roboto,Arial,sans-serif">
+<main style="max-width:720px;margin:0 auto;padding:32px 20px 56px">
+<div style="font-weight:900;letter-spacing:.04em;color:#6750A4">FatherVPN</div>
+<section style="margin-top:22px;padding:24px;border-radius:28px;background:#F3EDF7">
+<h1 style="font-size:clamp(28px,6vw,40px);line-height:1.12">{title}</h1>
+<p>Документ временно не опубликован. Завершается проверка обязательных сведений об операторе и условий обслуживания.</p>
+<p>По вопросам заказа, оплаты или претензии обратитесь в поддержку: <a style="color:#6750A4" href="https://t.me/Father_vpn_support">@Father_vpn_support</a>.</p>
+<p><a style="color:#6750A4" href="/">Вернуться на сайт</a></p>
+</section></main></body></html>"""
+
+
 @app.get('/privacy')
 async def privacy_policy():
+    if not legal_documents_available():
+        return html_response(legal_pending_page('Политика конфиденциальности'), 503)
     try:
         content=(Path(__file__).resolve().parent/'privacy.html').read_text(encoding='utf-8')
     except OSError:
-        return html_response('Политика конфиденциальности временно недоступна',503)
+        return html_response(legal_pending_page('Политика конфиденциальности'),503)
     return HTMLResponse(content,headers={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'})
+
 
 @app.get('/terms')
 async def user_agreement():
+    if not legal_documents_available():
+        return html_response(legal_pending_page('Пользовательское соглашение'), 503)
     try:
         content=(Path(__file__).resolve().parent/'terms.html').read_text(encoding='utf-8')
     except OSError:
-        return html_response('Пользовательское соглашение временно недоступно',503)
+        return html_response(legal_pending_page('Пользовательское соглашение'),503)
     return HTMLResponse(content,headers={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'})
+
+
 @app.get('/cabinet/{token}')
 async def cabinet(token:str):
     u=get_user_by_cabinet_token(token);return html_response(user_panel(u)) if u else html_response('<h1>Ссылка не найдена</h1>',404)
