@@ -30,7 +30,7 @@ jobs:
             --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36' \
             --header 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
             --output "$body" --write-out '%{http_code}' \
-            'https://fathervpn.onrender.com/')
+            'https://fathervpn.onrender.com/')"
           test "$status" = "200"
           grep -qi 'FatherVPN' "$body"
           echo "Homepage visited successfully: HTTP $status; HTML contains FatherVPN."
