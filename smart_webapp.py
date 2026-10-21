@@ -8,7 +8,7 @@ import qrcode
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, log_action, parse_dt, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
+from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
 
 app = FastAPI(title="FatherVPN", version="7.0")
 ADMIN_WEB_TOKEN = os.environ.get("ADMIN_WEB_TOKEN", "").strip()
@@ -76,7 +76,25 @@ def admin_user_page(uid):
     u=get_user(uid)
     if not u:return admin_shell("Пользователь не найден",'<div class="panel"><h1 class="admin-title">Пользователь не найден</h1><div class="actions"><a class="btn tonal" href="/admin">Назад</a></div></div>',"users")
     st,tone,icon=status_info(u);sub=subscription_url(uid);cab=f"{BASE_URL}/cabinet/{ensure_cabinet_token(uid)}";username="@"+u["username"] if u["username"] else "Без username";grant=''.join(f'''<form method="post" action="/admin/action"><input type="hidden" name="csrf" value="{ADMIN_CSRF}"><input type="hidden" name="user_id" value="{uid}"><input type="hidden" name="action" value="grant:{code}"><button class="btn tonal" style="width:100%">{t['emoji']} +{t['name']}</button></form>''' for code,t in TARIFFS.items());ba="unblock" if u["blocked"] else "block";bt="Разблокировать" if u["blocked"] else "Заблокировать";bi="lock_open" if u["blocked"] else "block"
-    content=f'''<div class="user-head"><div><a class="muted" href="/admin">← Все пользователи</a><h1 class="admin-title" style="margin-top:8px">{esc(u['first_name'] or username)}</h1><p class="admin-sub">{esc(username)} · Telegram ID {uid}</p></div><span class="chip {tone}"><span class="material-symbols-rounded">{icon}</span>{esc(st)}</span></div><div class="metric-grid" style="grid-template-columns:repeat(3,1fr)"><div class="metric"><small>Тариф</small><strong>{esc(u['tariff'] or '—')}</strong></div><div class="metric"><small>Действует до</small><strong style="font-size:19px">{esc(fmt_dt(u['expires_at']))}</strong></div><div class="metric"><small>Осталось</small><strong>{actual_days(u['expires_at'])} дн.</strong></div></div><section class="panel"><h2>Продлить подписку</h2><div class="grant-grid">{grant}</div></section><div class="admin-grid"><div><section class="panel"><h2>Персональная ссылка</h2><div class="copy-row"><code id="subLink">{esc(sub)}</code><button class="icon-btn" onclick="cp('subLink')"><span class="material-symbols-rounded">content_copy</span></button></div><div class="actions"><a class="btn filled" target="_blank" href="{esc(sub)}"><span class="material-symbols-rounded">open_in_new</span>Открыть подписку</a><form method="post" action="/admin/action" onsubmit="return confirm('Старая ссылка сразу перестанет работать. Создать новую?')"><input type="hidden" name="csrf" value="{ADMIN_CSRF}"><input type="hidden" name="user_id" value="{uid}"><input type="hidden" name="action" value="rotate"><button class="btn outline"><span class="material-symbols-rounded">refresh</span>Сменить ссылку</button></form></div></section><section class="panel"><h2>Личный кабинет</h2><div class="copy-row"><code id="cabLink">{esc(cab)}</code><button class="icon-btn" onclick="cp('cabLink')"><span class="material-symbols-rounded">content_copy</span></button></div></section></div><aside><section class="panel"><h2>Управление</h2><form method="post" action="/admin/action"><input type="hidden" name="csrf" value="{ADMIN_CSRF}"><input type="hidden" name="user_id" value="{uid}"><input type="hidden" name="action" value="{ba}"><button class="btn {'tonal' if u['blocked'] else 'danger'}" style="width:100%"><span class="material-symbols-rounded">{bi}</span>{bt}</button></form>{f'<a class="btn outline" style="width:100%;margin-top:8px" href="https://t.me/{esc(u["username"])}" target="_blank"><span class="material-symbols-rounded">send</span>Открыть Telegram</a>' if u['username'] else ''}</section></aside></div>''';return admin_shell(str(u['first_name'] or uid),content,"users")
+    content=f'''<div class="user-head"><div><a class="muted" href="/admin">← Все пользователи</a><h1 class="admin-title" style="margin-top:8px">{esc(u['first_name'] or username)}</h1><p class="admin-sub">{esc(username)} · Telegram ID {uid}</p></div><span class="chip {tone}"><span class="material-symbols-rounded">{icon}</span>{esc(st)}</span></div><div class="metric-grid" style="grid-template-columns:repeat(3,1fr)"><div class="metric"><small>Тариф</small><strong>{esc(u['tariff'] or '—')}</strong></div><div class="metric"><small>Действует до</small><strong style="font-size:19px">{esc(fmt_dt(u['expires_at']))}</strong></div><div class="metric"><small>Осталось</small><strong>{actual_days(u['expires_at'])} дн.</strong></div></div><section class="panel"><h2>Продлить подписку</h2><div class="grant-grid">{grant}</div></section><div class="admin-grid"><div><section class="panel"><h2>Персональная ссылка</h2><div class="copy-row"><code id="subLink">{esc(sub)}</code><button class="icon-btn" onclick="cp('subLink')"><span class="material-symbols-rounded">content_copy</span></button></div><div class="actions"><a class="btn filled" target="_blank" href="{esc(sub)}"><span class="material-symbols-rounded">open_in_new</span>Открыть подписку</a><form method="post" action="/admin/action" onsubmit="return confirm('Старая ссылка сразу перестанет работать. Создать новую?')"><input type="hidden" name="csrf" value="{ADMIN_CSRF}"><input type="hidden" name="user_id" value="{uid}"><input type="hidden" name="action" value="rotate"><button class="btn outline"><span class="material-symbols-rounded">refresh</span>Сменить ссылку</button></form></div></section><section class="panel"><h2>Личный кабинет</h2><div class="copy-row"><code id="cabLink">{esc(cab)}</code><button class="icon-btn" onclick="cp('cabLink')"><span class="material-symbols-rounded">content_copy</span></button></div></section></div><aside><section class="panel"><h2>Управление</h2><form method="post" action="/admin/action"><input type="hidden" name="csrf" value="{ADMIN_CSRF}"><input type="hidden" name="user_id" value="{uid}"><input type="hidden" name="action" value="{ba}"><button class="btn {'tonal' if u['blocked'] else 'danger'}" style="width:100%"><span class="material-symbols-rounded">{bi}</span>{bt}</button></form>{f'<a class="btn outline" style="width:100%;margin-top:8px" href="https://t.me/{esc(u["username"])}" target="_blank"><span class="material-symbols-rounded">send</span>Открыть Telegram</a>' if u['username'] else ''}</section></aside></div>''';clients = list_subscription_clients(uid, 20)
+    client_rows = "".join(
+        f'<tr><td>{esc(c["client_name"])}</td><td>{esc(c["ip_address"] or "—")}</td><td>{int(c["request_count"] or 0)}</td><td>{esc(fmt_dt(c["first_seen"]))}</td><td>{esc(fmt_dt(c["last_seen"]))}</td><td><details><summary>Показать</summary><code>{esc((c["user_agent"] or "—")[:350])}</code></details></td></tr>'
+        for c in clients
+    ) or '<tr><td colspan="6" class="empty">Пока нет обращений к персональной ссылке.</td></tr>'
+    last_seen = fmt_dt(clients[0]["last_seen"]) if clients else "—"
+    content += f'''<section class="panel"><h2>Трафик и VPN-клиенты</h2>
+<div class="stats" style="grid-template-columns:repeat(3,1fr)">
+  <div class="stat"><small>Использовано трафика</small><strong>Нет данных</strong></div>
+  <div class="stat"><small>Клиентских профилей по запросам</small><strong>{len(clients)}</strong></div>
+  <div class="stat"><small>Последнее обновление ссылки</small><strong>{esc(last_seen)}</strong></div>
+</div>
+<div class="chip warn" style="margin:14px 0"><span class="material-symbols-rounded">info</span>Это обращения к ссылке подписки, а не список активных VPN-соединений.</div>
+<p class="muted">Сейчас в подписке сторонние серверы без доступной для FatherVPN статистики. Чтобы показывать реальные гигабайты, нужны собственные управляемые Xray/3x-ui узлы, статистический API и отдельные UUID пользователей. До подключения такой интеграции трафик намеренно показан как «Нет данных».</p>
+<h2 style="margin-top:24px">Клиенты, обновлявшие подписку</h2>
+<div class="table-wrap"><table class="table" style="min-width:850px"><thead><tr><th>Клиент</th><th>IP</th><th>Запросов</th><th>Первый запрос</th><th>Последний запрос</th><th>User-Agent</th></tr></thead><tbody>{client_rows}</tbody></table></div>
+<p class="muted">Клиент определяется по User-Agent, если приложение его передаёт. Группировка по приложению, IP и User-Agent приблизительная: она не гарантирует подсчёт физических устройств и не подтверждает, что VPN прямо сейчас подключён.</p>
+</section>'''
+    return admin_shell(str(u['first_name'] or uid),content,"users")
 @app.get('/')
 async def home():
     try:return HTMLResponse(INDEX_FILE.read_text(encoding='utf-8'))
@@ -89,10 +107,28 @@ async def cabinet(token:str):
 @app.get('/s/{token}')
 async def smart_subscription(token:str,request:Request):
     u=get_user_by_subscription_token(token)
-    if not u:return html_response('<h1>Ссылка не найдена</h1>',404) if browser(request) else raw_response(BLOCKED_SUBSCRIPTION)
-    if browser(request):return html_response(user_panel(u))
-    if not subscription_active(u):return raw_response(BLOCKED_SUBSCRIPTION)
-    content=active_servers();return raw_response(content if content else 'FatherVPN: список серверов пуст',200 if content else 503)
+    if not u:
+        return html_response('<h1>Ссылка не найдена</h1>',404) if browser(request) else raw_response(BLOCKED_SUBSCRIPTION)
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip_address = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")
+    is_browser = browser(request)
+    try:
+        record_subscription_client(
+            int(u["user_id"]),
+            request.headers.get("user-agent", ""),
+            ip_address,
+            request.headers.get("accept", ""),
+            is_browser,
+        )
+    except Exception:
+        # Monitoring must never prevent a customer from loading their subscription.
+        pass
+    if is_browser:
+        return html_response(user_panel(u))
+    if not subscription_active(u):
+        return raw_response(BLOCKED_SUBSCRIPTION)
+    content=active_servers()
+    return raw_response(content if content else 'FatherVPN: список серверов пуст',200 if content else 503)
 @app.get('/s/{token}/qr')
 async def qr(token:str):
     u=get_user_by_subscription_token(token)

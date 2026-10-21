@@ -1,3 +1,4 @@
+import hashlib
 import html
 import json
 import os
@@ -217,6 +218,24 @@ def init_db():
                 )
                 """
             )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS subscription_clients(
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    client_name TEXT NOT NULL,
+                    is_browser INTEGER NOT NULL DEFAULT 0,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    request_count BIGINT NOT NULL DEFAULT 1,
+                    UNIQUE(user_id, fingerprint)
+                )
+                """
+            )
+            c.execute("CREATE INDEX IF NOT EXISTS idx_subscription_clients_user_time ON subscription_clients(user_id,last_seen)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_expires_at ON users(expires_at)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_blocked ON users(blocked)")
@@ -257,6 +276,20 @@ def init_db():
                     details TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS subscription_clients(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    client_name TEXT NOT NULL,
+                    is_browser INTEGER NOT NULL DEFAULT 0,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    request_count INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE(user_id, fingerprint)
+                );
+                CREATE INDEX IF NOT EXISTS idx_subscription_clients_user_time ON subscription_clients(user_id,last_seen);
                 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
                 """
             )
@@ -423,6 +456,83 @@ def log_action(actor_id, action, target_type="", target_id="", details=""):
             (actor_id, action, target_type, str(target_id), str(details), now_iso()),
         )
         c.commit()
+    finally:
+        c.close()
+
+
+def classify_subscription_client(user_agent="", accept="", browser_hint=False):
+    ua = (user_agent or "")[:500]
+    low = ua.lower()
+    apps = (
+        ("hiddify", "Hiddify"),
+        ("v2rayng", "v2rayNG"),
+        ("nekobox", "NekoBox"),
+        ("nekoray", "NekoRay"),
+        ("shadowrocket", "Shadowrocket"),
+        ("v2raytun", "V2RayTun"),
+        ("sing-box", "sing-box"),
+        ("singbox", "sing-box"),
+        ("clash", "Clash"),
+        ("mihomo", "Mihomo"),
+        ("stash", "Stash"),
+        ("surge", "Surge"),
+        ("quantumult", "Quantumult"),
+        ("loon", "Loon"),
+        ("surfboard", "Surfboard"),
+        ("outline", "Outline"),
+    )
+    for marker, name in apps:
+        if marker in low:
+            return name
+    if browser_hint or "text/html" in (accept or "").lower() or any(
+        marker in low for marker in ("mozilla/", "chrome/", "safari/", "firefox/", "edg/")
+    ):
+        return "Браузер"
+    if any(marker in low for marker in ("curl/", "wget/", "python-requests", "urllib")):
+        return "HTTP-клиент / скрипт"
+    return "Неизвестный клиент" if ua else "User-Agent не передан"
+
+
+def record_subscription_client(user_id, user_agent="", ip_address="", accept="", browser_hint=False):
+    ua = (user_agent or "")[:500]
+    ip = (ip_address or "")[:64]
+    client_name = classify_subscription_client(ua, accept, browser_hint)
+    is_browser = int(client_name == "Браузер")
+    fingerprint = hashlib.sha256(
+        f"{int(user_id)}\0{client_name}\0{ip}\0{ua}".encode("utf-8", "replace")
+    ).hexdigest()
+    now = now_iso()
+    c = db()
+    try:
+        c.execute(
+            """
+            INSERT INTO subscription_clients(
+                user_id,fingerprint,client_name,is_browser,ip_address,user_agent,
+                first_seen,last_seen,request_count
+            ) VALUES(?,?,?,?,?,?,?,?,1)
+            ON CONFLICT(user_id,fingerprint) DO UPDATE SET
+                client_name=excluded.client_name,
+                is_browser=excluded.is_browser,
+                ip_address=excluded.ip_address,
+                user_agent=excluded.user_agent,
+                last_seen=excluded.last_seen,
+                request_count=subscription_clients.request_count+1
+            """,
+            (int(user_id), fingerprint, client_name, is_browser, ip, ua, now, now),
+        )
+        c.commit()
+    finally:
+        c.close()
+
+
+def list_subscription_clients(user_id, limit=20):
+    safe_limit = max(1, min(int(limit), 50))
+    c = db()
+    try:
+        return c.execute(
+            "SELECT * FROM subscription_clients WHERE user_id=? ORDER BY last_seen DESC LIMIT ?",
+            (int(user_id), safe_limit),
+        ).fetchall()
     finally:
         c.close()
 
