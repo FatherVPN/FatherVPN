@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import secrets
+from pathlib import Path
 from urllib.parse import parse_qs, quote
 
 import qrcode
@@ -101,6 +102,22 @@ async def home():
     except OSError:return html_response('FatherVPN',503)
 @app.get('/health')
 async def health():return {'ok':bool(active_servers()),'version':'7.0','admin':bool(ADMIN_WEB_TOKEN)}
+
+@app.get('/privacy')
+async def privacy_policy():
+    try:
+        content=(Path(__file__).resolve().parent/'privacy.html').read_text(encoding='utf-8')
+    except OSError:
+        return html_response('Политика конфиденциальности временно недоступна',503)
+    return HTMLResponse(content,headers={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'})
+
+@app.get('/terms')
+async def user_agreement():
+    try:
+        content=(Path(__file__).resolve().parent/'terms.html').read_text(encoding='utf-8')
+    except OSError:
+        return html_response('Пользовательское соглашение временно недоступно',503)
+    return HTMLResponse(content,headers={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'})
 @app.get('/cabinet/{token}')
 async def cabinet(token:str):
     u=get_user_by_cabinet_token(token);return html_response(user_panel(u)) if u else html_response('<h1>Ссылка не найдена</h1>',404)
