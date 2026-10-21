@@ -63,13 +63,13 @@ async def cb_more(q:CallbackQuery):
 
 @router.callback_query(F.data=='announcements')
 async def cb_announcements(q:CallbackQuery):
-    items=list_announcements(5)
+    items=list_announcements(2)
     if not items:
         body='📣 <b>Объявления</b>\n\nПока новых объявлений нет. Когда появятся важные новости сервиса, они будут здесь.'
     else:
         parts=['📣 <b>Объявления FatherVPN</b>']
         for item in items:
-            parts.append(f"\n<b>{html.escape(str(item['title']))}</b>\n{html.escape(str(item['body']))}\n<i>{html.escape(fmt_dt(item['created_at']))}</i>")
+            parts.append(f"\n<b>{html.escape(str(item['title'])[:80])}</b>\n{html.escape(str(item['body'])[:200]) + ('…' if len(str(item['body'])) > 200 else '')}\n<i>{html.escape(fmt_dt(item['created_at']))}</i>")
         body='\n'.join(parts)
     await q.message.edit_text(body,reply_markup=ik([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')]]),parse_mode='HTML')
     await q.answer()
@@ -144,7 +144,7 @@ async def admin(q:CallbackQuery):
     if q.from_user.id!=ADMIN_ID:return await q.answer('Нет доступа',show_alert=True)
     await q.message.edit_text('🛠 <b>Администрирование FatherVPN</b>\n\nВ веб-панели есть поиск пользователей, статистика, платежи, выдача тарифов, блокировки и смена персональной ссылки.\n\nКоманды тоже работают:\n<code>/grant ID 1d|7d|1m|3m|6m|12m</code>\n<code>/block ID</code>\n<code>/unblock ID</code>\n<code>/announce Заголовок | Текст</code>\n<code>/announce_off ID</code>',reply_markup=ik([[InlineKeyboardButton(text='🛠 Открыть веб-админку',url=admin_web_url())],[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
 async def _broadcast_announcement(title, body):
-    text=f'📣 <b>Объявление FatherVPN</b>\n\n<b>{html.escape(title)}</b>\n\n{html.escape(body)}'
+    text=f'📣 <b>Объявление FatherVPN</b>\n\n<b>{html.escape(title[:80])}</b>\n\n{html.escape(body[:500])}{"…" if len(body)>500 else ""}'
     sent=0
     failed=0
     for uid in list_telegram_user_ids():
