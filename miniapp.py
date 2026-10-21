@@ -14,7 +14,6 @@ from core import (
     db,
     get_user,
     log_action,
-    now_iso,
     parse_dt,
     subscription_active,
     subscription_url,
