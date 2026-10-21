@@ -11,9 +11,9 @@ from urllib.parse import parse_qs, quote
 
 import qrcode
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, consume_account_link, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
+from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, consume_account_link, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_announcements, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
 
 app = FastAPI(title="FatherVPN", version="7.0")
 
@@ -157,6 +157,23 @@ async def home():
     except OSError:return html_response('FatherVPN',503)
 @app.get('/health')
 async def health():return {'ok':bool(active_servers()),'version':'7.0','admin':bool(ADMIN_WEB_TOKEN)}
+
+@app.get('/api/announcements')
+async def public_announcements(limit: int = 3):
+    items = list_announcements(limit)
+    return JSONResponse(
+        {"announcements": [
+            {
+                "id": int(item["id"]),
+                "title": str(item["title"]),
+                "body": str(item["body"]),
+                "created_at": str(item["created_at"]),
+            }
+            for item in items
+        ]},
+        headers=NO_CACHE,
+    )
+
 
 
 ACCOUNT_SESSION_COOKIE = "fvpn_account_session"
