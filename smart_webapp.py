@@ -2,7 +2,9 @@ import asyncio
 import hashlib
 import io
 import os
+import re
 import secrets
+from datetime import timedelta
 import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, quote
@@ -11,7 +13,7 @@ import qrcode
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
+from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, consume_account_link, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
 
 app = FastAPI(title="FatherVPN", version="7.0")
 
@@ -155,6 +157,281 @@ async def home():
     except OSError:return html_response('FatherVPN',503)
 @app.get('/health')
 async def health():return {'ok':bool(active_servers()),'version':'7.0','admin':bool(ADMIN_WEB_TOKEN)}
+
+
+ACCOUNT_SESSION_COOKIE = "fvpn_account_session"
+ACCOUNT_SESSION_DAYS = 30
+ACCOUNT_PASSWORD_ITERATIONS = 310000
+
+
+def _account_now():
+    return utc_now().isoformat(timespec="seconds")
+
+
+def _account_hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, ACCOUNT_PASSWORD_ITERATIONS)
+    return "pbkdf2_sha256$" + str(ACCOUNT_PASSWORD_ITERATIONS) + "$" + salt.hex() + "$" + digest.hex()
+
+
+def _account_verify_password(password: str, encoded: str) -> bool:
+    try:
+        algorithm, rounds, salt_hex, expected = encoded.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), int(rounds)).hex()
+        return secrets.compare_digest(digest, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def _account_session(request: Request):
+    raw = request.cookies.get(ACCOUNT_SESSION_COOKIE, "")
+    if not raw or len(raw) > 200:
+        return None
+    session_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    c = db()
+    try:
+        row = c.execute(
+            """SELECT s.email, s.csrf_token, s.expires_at, a.telegram_id,
+                      a.telegram_username, a.telegram_first_name, a.created_at
+               FROM account_sessions s JOIN account_users a ON a.email=s.email
+               WHERE s.session_hash=? AND s.expires_at>?""",
+            (session_hash, _account_now()),
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        c.close()
+
+
+def _account_create_session(email: str):
+    raw = secrets.token_urlsafe(36)
+    session_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    csrf = secrets.token_urlsafe(24)
+    expires = (utc_now() + timedelta(days=ACCOUNT_SESSION_DAYS)).isoformat(timespec="seconds")
+    c = db()
+    try:
+        c.execute("DELETE FROM account_sessions WHERE expires_at<=?", (_account_now(),))
+        c.execute(
+            "INSERT INTO account_sessions(session_hash,email,csrf_token,expires_at) VALUES(?,?,?,?)",
+            (session_hash, email, csrf, expires),
+        )
+        c.commit()
+    finally:
+        c.close()
+    return raw, csrf
+
+
+def _account_set_cookie(response, raw: str):
+    response.set_cookie(
+        ACCOUNT_SESSION_COOKIE, raw, max_age=ACCOUNT_SESSION_DAYS * 86400,
+        httponly=True, secure=True, samesite="lax", path="/",
+    )
+    return response
+
+
+def _account_form(request_body: bytes):
+    try:
+        parsed = parse_qs(request_body.decode("utf-8"), keep_blank_values=True, max_num_fields=30)
+        return {key: values[-1] for key, values in parsed.items()}
+    except (UnicodeDecodeError, ValueError):
+        return {}
+
+
+def _account_page(title: str, body: str, message: str = "", error: bool = False):
+    notice = ""
+    if message:
+        color = "var(--danger)" if error else "var(--success)"
+        notice = f'<div class="notice" style="color:{color}">{esc(message)}</div>'
+    return f"""<!doctype html>
+<html lang="ru" data-theme="system">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FEF7FF"><meta name="color-scheme" content="light dark">
+<title>{esc(title)} · FatherVPN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Roboto+Flex:opsz,wght@8..144,400..900&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0" rel="stylesheet">
+<style>
+:root{{--p:#6750A4;--op:#fff;--pc:#EADDFF;--opc:#21005D;--s:#FEF7FF;--sl:#F7F2FA;--sm:#F3EDF7;--sh:#ECE6F0;--t:#1D1B20;--v:#49454F;--o:#79747E;--ov:#CAC4D0;--danger:#B3261E;--success:#146C2E;color-scheme:light}}
+:root[data-theme="dark"]{{--p:#D0BCFF;--op:#381E72;--pc:#4F378B;--opc:#EADDFF;--s:#141218;--sl:#1D1B20;--sm:#211F26;--sh:#2B2930;--t:#E6E1E9;--v:#CAC4D0;--o:#938F99;--ov:#49454F;--danger:#F2B8B5;--success:#8FD49F;color-scheme:dark}}
+*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(ellipse at 50% -10%,color-mix(in srgb,var(--p) 18%,transparent),transparent 45%),var(--s);color:var(--t);font:16px/1.55 Roboto,system-ui,sans-serif;min-height:100vh}}
+a{{color:inherit;text-decoration:none}}.wrap{{width:min(1060px,calc(100% - 28px));margin:auto}}
+.topbar{{position:sticky;top:10px;z-index:5;margin:10px auto 0;width:min(1060px,calc(100% - 28px));border:1px solid color-mix(in srgb,var(--ov) 55%,transparent);border-radius:26px;background:color-mix(in srgb,var(--s) 64%,transparent);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);box-shadow:0 8px 32px #0000000b,inset 0 1px #ffffff50}}
+.nav{{min-height:64px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}}
+.brand{{font:900 19px 'Roboto Flex',Roboto,sans-serif;display:flex;align-items:center;gap:10px;white-space:nowrap}}
+.logo{{width:38px;height:38px;border-radius:14px;background:var(--p);color:var(--op);display:grid;place-items:center}}
+.navlinks{{display:flex;align-items:center;gap:5px}}.navlinks a{{padding:10px 13px;border-radius:999px;color:var(--v);font-weight:700;font-size:14px}}.navlinks a:hover{{background:var(--sh)}}
+.btn{{min-height:46px;padding:0 17px;border-radius:999px;border:1px solid color-mix(in srgb,var(--ov) 45%,transparent);display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:750;background:color-mix(in srgb,var(--s) 48%,transparent);cursor:pointer;font:inherit;font-weight:750}}
+.primary{{background:var(--p);color:var(--op);border-color:transparent}}.tonal{{background:var(--pc);color:var(--opc);border-color:transparent}}
+main{{padding:44px 0 70px}}.card{{width:min(100%,660px);margin:0 auto;padding:clamp(22px,5vw,38px);border:1px solid color-mix(in srgb,var(--ov) 48%,transparent);border-radius:32px;background:color-mix(in srgb,var(--sl) 78%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 18px 55px #0000000c,inset 0 1px #ffffff66}}
+h1{{font:900 clamp(30px,5vw,42px)/1.05 'Roboto Flex',Roboto,sans-serif;letter-spacing:-.035em;margin:0 0 10px}}.muted{{color:var(--v)}}.sub{{margin:0 0 26px;color:var(--v)}}
+label{{display:block;font-weight:700;margin:16px 0 7px}}input{{width:100%;min-height:50px;border-radius:16px;border:1px solid var(--ov);padding:0 15px;background:var(--s);color:var(--t);font:inherit;outline:none}}input:focus{{border-color:var(--p);box-shadow:0 0 0 3px color-mix(in srgb,var(--p) 22%,transparent)}}
+button.btn{{width:100%;margin-top:22px}}.notice{{margin:16px 0;padding:13px 15px;border-radius:16px;background:var(--sm);overflow-wrap:anywhere}}.divider{{height:1px;background:var(--ov);opacity:.6;margin:24px 0}}.link{{color:var(--p);font-weight:750}}.row{{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}}.pill{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:var(--sm);font-size:14px;font-weight:700}}.panel{{margin:18px 0;padding:18px;border-radius:22px;background:var(--s);border:1px solid color-mix(in srgb,var(--ov) 45%,transparent)}}.panel h2{{margin:0 0 8px;font-size:19px}}.fieldhint{{font-size:13px;color:var(--v);margin:8px 0 0}}.footer{{text-align:center;color:var(--v);font-size:13px;padding:0 20px 30px}}
+@media(max-width:760px){{.navlinks{{display:none}}.nav{{padding:7px 9px}}.brand{{font-size:17px}}.nav .btn{{padding:0 13px;min-height:43px}}.topbar{{top:6px;margin-top:6px}}}}
+@media(prefers-reduced-motion:reduce){{*{{scroll-behavior:auto!important;transition:none!important}}}}
+</style></head>
+<body>
+<header class="topbar"><nav class="nav"><a class="brand" href="/"><span class="logo"><span class="material-symbols-rounded">shield_lock</span></span>FatherVPN</a>
+<div class="navlinks"><a href="/">Главная</a><a href="/#features">Возможности</a><a href="/#pricing">Тарифы</a><a href="/#support">Поддержка</a></div>
+<a class="btn tonal" href="/account"><span class="material-symbols-rounded">account_circle</span>Аккаунт</a></nav></header>
+<main><section class="card"><h1>{esc(title)}</h1>{notice}{body}</section></main>
+<footer class="footer">FatherVPN · <a class="link" href="/privacy">Конфиденциальность</a> · <a class="link" href="/terms">Соглашение</a> · <a class="link" href="https://t.me/Father_vpn_support">Поддержка</a></footer>
+</body></html>"""
+
+
+def _account_csrf_ok(session, form):
+    return bool(session and form.get("csrf") and secrets.compare_digest(str(form.get("csrf")), str(session.get("csrf_token", ""))))
+
+
+@app.get("/register")
+async def account_register_page(request: Request):
+    if _account_session(request):
+        return RedirectResponse("/account", status_code=303)
+    body = '''<p class="sub">Создайте аккаунт, чтобы управлять привязкой Telegram и данными подписки.</p>
+<form method="post" action="/register">
+<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com">
+<label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required placeholder="Не менее 10 символов">
+<label for="password2">Повторите пароль</label><input id="password2" name="password2" type="password" autocomplete="new-password" minlength="10" maxlength="1024" required>
+<p class="fieldhint">Email будет логином. Подтверждение почты пока не настроено, поэтому используйте адрес, к которому у вас есть доступ.</p>
+<button class="btn primary" type="submit">Создать аккаунт</button></form>
+<div class="divider"></div><p class="muted">Уже зарегистрированы? <a class="link" href="/login">Войти</a></p>'''
+    return html_response(_account_page("Создать аккаунт", body))
+
+
+@app.post("/register")
+async def account_register(request: Request):
+    form = _account_form(await request.body())
+    email = form.get("email", "").strip().lower()
+    password = form.get("password", "")
+    password2 = form.get("password2", "")
+    if not re.fullmatch(r"[^@\s]{1,64}@[^@\s.]+(?:\.[^@\s.]+)+", email) or len(email) > 254:
+        return html_response(_account_page("Создать аккаунт", "", "Введите корректный email.", True), 400)
+    if len(password) < 10 or len(password) > 1024 or password != password2:
+        return html_response(_account_page("Создать аккаунт", "", "Пароли должны совпадать и содержать не менее 10 символов.", True), 400)
+    now = _account_now()
+    c = db()
+    try:
+        existing = c.execute("SELECT email FROM account_users WHERE email=?", (email,)).fetchone()
+        if existing:
+            return html_response(_account_page("Создать аккаунт", "", "Аккаунт с таким email уже существует. Попробуйте войти.", True), 409)
+        c.execute(
+            "INSERT INTO account_users(email,password_hash,created_at,updated_at) VALUES(?,?,?,?)",
+            (email, _account_hash_password(password), now, now),
+        )
+        c.commit()
+    except Exception:
+        c.rollback()
+        return html_response(_account_page("Создать аккаунт", "", "Не удалось создать аккаунт. Попробуйте ещё раз.", True), 500)
+    finally:
+        c.close()
+    raw, _csrf = _account_create_session(email)
+    return _account_set_cookie(RedirectResponse("/account", status_code=303), raw)
+
+
+@app.get("/login")
+async def account_login_page(request: Request):
+    if _account_session(request):
+        return RedirectResponse("/account", status_code=303)
+    body = '''<p class="sub">Войдите в личный кабинет FatherVPN.</p>
+<form method="post" action="/login">
+<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" maxlength="254" required placeholder="you@example.com">
+<label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+<button class="btn primary" type="submit">Войти</button></form>
+<div class="divider"></div><p class="muted">Нет аккаунта? <a class="link" href="/register">Зарегистрироваться</a></p>'''
+    return html_response(_account_page("Вход в аккаунт", body))
+
+
+@app.post("/login")
+async def account_login(request: Request):
+    form = _account_form(await request.body())
+    email = form.get("email", "").strip().lower()
+    password = form.get("password", "")
+    c = db()
+    try:
+        row = c.execute("SELECT password_hash FROM account_users WHERE email=?", (email,)).fetchone()
+    finally:
+        c.close()
+    encoded = row["password_hash"] if row else "pbkdf2_sha256$310000$00000000000000000000000000000000$" + ("0" * 64)
+    if not _account_verify_password(password, encoded) or not row:
+        return html_response(_account_page("Вход в аккаунт", "", "Email или пароль неверны.", True), 401)
+    raw, _csrf = _account_create_session(email)
+    return _account_set_cookie(RedirectResponse("/account", status_code=303), raw)
+
+
+@app.get("/account")
+async def account_cabinet(request: Request, message: str = ""):
+    session = _account_session(request)
+    if not session:
+        return RedirectResponse("/login", status_code=303)
+    email = str(session["email"])
+    telegram_id = session["telegram_id"]
+    if telegram_id is not None:
+        telegram_id = int(telegram_id)
+        username = str(session.get("telegram_username") or "").strip()
+        display = ("@" + username) if username else str(session.get("telegram_first_name") or "Telegram аккаунт")
+        telegram_panel = f'''<div class="panel"><div class="row"><h2>Telegram привязан</h2><span class="pill">✓ Подключён</span></div><p>{esc(display)} · ID {telegram_id}</p><p class="fieldhint">Этот Telegram используется для связи с подпиской FatherVPN.</p></div>'''
+        user = get_user(telegram_id)
+        if user:
+            active = subscription_active(user)
+            status = "Активна" if active else ("Заблокирована" if user["blocked"] else "Неактивна")
+            tariff = TARIFFS.get(str(user["tariff"] or ""), {}).get("name", "Нет тарифа")
+            telegram_panel += f'''<div class="panel"><h2>Подписка</h2><div class="row"><span class="muted">Статус</span><strong>{esc(status)}</strong></div><div class="row"><span class="muted">Тариф</span><strong>{esc(tariff)}</strong></div><div class="row"><span class="muted">Действует до</span><strong>{esc(fmt_dt(user["expires_at"]))}</strong></div><p><a class="link" href="{esc(subscription_url(telegram_id))}">Открыть страницу подписки ↗</a></p></div>'''
+    else:
+        telegram_panel = '''<div class="panel"><div class="row"><h2>Telegram не привязан</h2><span class="pill">Не подключён</span></div><p class="muted">Привяжите Telegram, чтобы видеть информацию о своей подписке в этом кабинете.</p>
+<form method="post" action="/account/link-telegram"><input type="hidden" name="csrf" value="''' + esc(session["csrf_token"]) + '''"><button class="btn primary" type="submit"><span class="material-symbols-rounded">link</span>Привязать Telegram</button></form>
+<p class="fieldhint">Откроется официальный бот FatherVPN. Нажмите Start, чтобы подтвердить привязку. Ссылка действует 15 минут и используется один раз.</p></div>'''
+    body = f'''<p class="sub">Управление аккаунтом и привязанным Telegram.</p>
+<div class="panel"><div class="row"><span class="muted">Аккаунт</span><strong>{esc(email)}</strong></div><div class="row"><span class="muted">Создан</span><strong>{esc(fmt_dt(session["created_at"]))}</strong></div></div>
+{telegram_panel}
+<form method="post" action="/account/logout"><input type="hidden" name="csrf" value="{esc(session["csrf_token"])}"><button class="btn" type="submit">Выйти из аккаунта</button></form>'''
+    return html_response(_account_page("Личный кабинет", body, message))
+
+
+@app.post("/account/link-telegram")
+async def account_link_telegram(request: Request):
+    session = _account_session(request)
+    if not session:
+        return RedirectResponse("/login", status_code=303)
+    form = _account_form(await request.body())
+    if not _account_csrf_ok(session, form):
+        return html_response(_account_page("Личный кабинет", "", "Сессия устарела. Обновите страницу и попробуйте снова.", True), 403)
+    token = secrets.token_urlsafe(24)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = utc_now()
+    expires = (now + timedelta(minutes=15)).isoformat(timespec="seconds")
+    c = db()
+    try:
+        c.execute("DELETE FROM account_link_tokens WHERE expires_at<=? OR used_at IS NOT NULL", (now.isoformat(timespec="seconds"),))
+        c.execute("INSERT INTO account_link_tokens(token_hash,email,expires_at,used_at) VALUES(?,?,?,NULL)", (token_hash, session["email"], expires))
+        c.commit()
+    finally:
+        c.close()
+    return RedirectResponse(f"https://t.me/Father_VPNs_bot?start=link_{quote(token)}", status_code=303)
+
+
+@app.post("/account/logout")
+async def account_logout(request: Request):
+    session = _account_session(request)
+    if not session:
+        response = RedirectResponse("/", status_code=303)
+        response.delete_cookie(ACCOUNT_SESSION_COOKIE, path="/")
+        return response
+    form = _account_form(await request.body())
+    if not _account_csrf_ok(session, form):
+        return html_response(_account_page("Личный кабинет", "", "Сессия устарела. Обновите страницу и попробуйте снова.", True), 403)
+    raw = request.cookies.get(ACCOUNT_SESSION_COOKIE, "")
+    c = db()
+    try:
+        c.execute("DELETE FROM account_sessions WHERE session_hash=?", (hashlib.sha256(raw.encode("utf-8")).hexdigest(),))
+        c.commit()
+    finally:
+        c.close()
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(ACCOUNT_SESSION_COOKIE, path="/")
+    return response
+
 
 @app.get('/privacy')
 async def privacy_policy():
