@@ -58,19 +58,19 @@ async def cb_more(q:CallbackQuery):
     if q.from_user.id==ADMIN_ID:
         rows.append([InlineKeyboardButton(text='🛠 Администрирование',callback_data='admin')])
     rows.append([InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')])
-    await q.message.edit_text('☰ <b>Ещё</b>\\nАккаунт, помощь и настройки FatherVPN.',reply_markup=ik(rows),parse_mode='HTML')
+    await q.message.edit_text('☰ <b>Ещё</b>\nАккаунт, помощь и настройки FatherVPN.',reply_markup=ik(rows),parse_mode='HTML')
     await q.answer()
 
 @router.callback_query(F.data=='announcements')
 async def cb_announcements(q:CallbackQuery):
     items=list_announcements(5)
     if not items:
-        body='📣 <b>Объявления</b>\\n\\nПока новых объявлений нет. Когда появятся важные новости сервиса, они будут здесь.'
+        body='📣 <b>Объявления</b>\n\nПока новых объявлений нет. Когда появятся важные новости сервиса, они будут здесь.'
     else:
         parts=['📣 <b>Объявления FatherVPN</b>']
         for item in items:
-            parts.append(f"\\n<b>{html.escape(str(item['title']))}</b>\\n{html.escape(str(item['body']))}\\n<i>{html.escape(fmt_dt(item['created_at']))}</i>")
-        body='\\n'.join(parts)
+            parts.append(f"\n<b>{html.escape(str(item['title']))}</b>\n{html.escape(str(item['body']))}\n<i>{html.escape(fmt_dt(item['created_at']))}</i>")
+        body='\n'.join(parts)
     await q.message.edit_text(body,reply_markup=ik([[InlineKeyboardButton(text='⬅️ Главное меню',callback_data='menu')]]),parse_mode='HTML')
     await q.answer()
 
@@ -144,7 +144,7 @@ async def admin(q:CallbackQuery):
     if q.from_user.id!=ADMIN_ID:return await q.answer('Нет доступа',show_alert=True)
     await q.message.edit_text('🛠 <b>Администрирование FatherVPN</b>\n\nВ веб-панели есть поиск пользователей, статистика, платежи, выдача тарифов, блокировки и смена персональной ссылки.\n\nКоманды тоже работают:\n<code>/grant ID 1d|7d|1m|3m|6m|12m</code>\n<code>/block ID</code>\n<code>/unblock ID</code>\n<code>/announce Заголовок | Текст</code>\n<code>/announce_off ID</code>',reply_markup=ik([[InlineKeyboardButton(text='🛠 Открыть веб-админку',url=admin_web_url())],[InlineKeyboardButton(text='⬅️ Назад',callback_data='menu')]]),parse_mode='HTML');await q.answer()
 async def _broadcast_announcement(title, body):
-    text=f'📣 <b>Объявление FatherVPN</b>\\n\\n<b>{html.escape(title)}</b>\\n\\n{html.escape(body)}'
+    text=f'📣 <b>Объявление FatherVPN</b>\n\n<b>{html.escape(title)}</b>\n\n{html.escape(body)}'
     sent=0
     failed=0
     for uid in list_telegram_user_ids():
@@ -167,12 +167,12 @@ async def announce_command(m:Message,command:CommandObject):
         return await m.answer('Формат: /announce Заголовок | Текст объявления')
     title,body=(part.strip() for part in raw.split('|',1))
     if not title or not body:
-        return await m.answer('Нужны и заголовок, и текст.\\nПример: /announce Плановые работы | Сегодня в 23:00 возможен перерыв.')
+        return await m.answer('Нужны и заголовок, и текст.\nПример: /announce Плановые работы | Сегодня в 23:00 возможен перерыв.')
     try:
         announcement_id=create_announcement(title,body,m.from_user.id)
     except ValueError as exc:
         return await m.answer(html.escape(str(exc)))
-    await m.answer(f'✅ Объявление #{announcement_id} опубликовано на сайте и в боте.\\nНачинаю рассылку пользователям.\\n\\nДля снятия с публикации: <code>/announce_off {announcement_id}</code>',parse_mode='HTML')
+    await m.answer(f'✅ Объявление #{announcement_id} опубликовано на сайте и в боте.\nНачинаю рассылку пользователям.\n\nДля снятия с публикации: <code>/announce_off {announcement_id}</code>',parse_mode='HTML')
     asyncio.create_task(_broadcast_announcement(title,body))
 
 @router.message(Command('announce_off'))
