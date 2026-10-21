@@ -10,6 +10,10 @@ from core import ADMIN_ID, BASE_URL, BOT_TOKEN, esc, log_action
 
 app = web.app
 
+# Register the customer-facing Telegram Mini App on the existing web service.
+from miniapp import router as miniapp_router
+app.include_router(miniapp_router)
+
 # Keep the existing admin secret/magic-link login as a fallback, but also allow
 # the Telegram account configured by ADMIN_ID to authenticate securely.
 if not web.ADMIN_SESSION and BOT_TOKEN:
