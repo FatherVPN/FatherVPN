@@ -290,7 +290,9 @@ async def cb_contact_method(q: CallbackQuery):
         await q.answer()
         return
 
-    contact_value = f"@{q.from_user.username}" if q.from_user.username else f"Telegram ID {q.from_user.id}"
+    if not q.from_user.username:
+        return await q.answer("У аккаунта нет Telegram username. Выберите Email для связи.", show_alert=True)
+    contact_value = f"@{q.from_user.username}"
     ok, error = await send_invoice_for_user(q.from_user.id, code, "telegram", contact_value)
     if ok:
         await q.answer("Счёт отправлен")
