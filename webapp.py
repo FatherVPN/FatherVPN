@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import urllib.request
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
@@ -21,7 +20,6 @@ from core import (
     get_device,
     get_user_by_cabinet_token,
     list_devices,
-    legal_documents_available,
     now_iso,
     parse_dt,
     set_device_blocked,
@@ -163,48 +161,6 @@ async def home():
         return HTMLResponse(INDEX_FILE.read_text(encoding="utf-8"))
     except OSError:
         return page_response(shell("FatherVPN", '<div class="card"><h1>FatherVPN</h1><p>Сайт временно недоступен.</p></div>'), 503)
-
-
-
-LEGAL_DIR = Path(__file__).resolve().parent / "legal"
-
-
-def legal_pending_page(title: str) -> str:
-    return f"""<!doctype html>
-<html lang="ru" data-theme="system">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#FEF7FF">
-<title>{title} · FatherVPN</title>
-<style>
-:root{{--p:#6750A4;--s:#FEF7FF;--c:#F3EDF7;--t:#1D1B20;--m:#49454F}}
-@media(prefers-color-scheme:dark){{--p:#D0BCFF;--s:#141218;--c:#211F26;--t:#E6E1E9;--m:#CAC4D0}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--s);color:var(--t);font:16px/1.6 Roboto,Arial,sans-serif}}
-main{{max-width:720px;margin:0 auto;padding:32px 20px 56px}}.brand{{font-weight:900;color:var(--p);letter-spacing:.04em}}
-.card{{margin-top:22px;padding:24px;border-radius:28px;background:var(--c)}}h1{{font-size:clamp(28px,6vw,40px);line-height:1.12;margin:0 0 12px}}p{{color:var(--m)}}a{{color:var(--p);font-weight:700}}
-</style></head><body><main><div class="brand">FatherVPN</div><div class="card"><h1>{title}</h1><p>Документ временно не опубликован. Мы завершаем проверку обязательных сведений и условий обслуживания.</p><p>По вопросам заказа, оплаты или претензии обратитесь в поддержку: <a href="https://t.me/Father_vpn_support">@Father_vpn_support</a>.</p><p><a href="/">Вернуться на сайт</a></p></div></main></body></html>"""
-
-
-def legal_document_response(filename: str, title: str) -> HTMLResponse:
-    if not legal_documents_available():
-        return HTMLResponse(legal_pending_page(title), status_code=503)
-    path = LEGAL_DIR / filename
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError:
-        return HTMLResponse(legal_pending_page(title), status_code=503)
-    return HTMLResponse(content)
-
-
-@app.get("/privacy", response_class=HTMLResponse)
-async def privacy_policy():
-    return legal_document_response("privacy.html", "Политика конфиденциальности")
-
-
-@app.get("/terms", response_class=HTMLResponse)
-async def user_terms():
-    return legal_document_response("terms.html", "Пользовательское соглашение")
 
 
 @app.get("/health")
