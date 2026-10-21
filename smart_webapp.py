@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
 import io
 import os
 import secrets
+import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, quote
 
@@ -12,6 +14,57 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse,
 from core import BASE_URL, BLOCKED_SUBSCRIPTION, INDEX_FILE, TARIFFS, active_servers, db, ensure_cabinet_token, esc, fmt_dt, get_user, get_user_by_cabinet_token, get_user_by_subscription_token, grant_subscription, list_subscription_clients, log_action, parse_dt, record_subscription_client, resolve_target, set_user_blocked, subscription_active, subscription_url, utc_now
 
 app = FastAPI(title="FatherVPN", version="7.0")
+
+# Best-effort self-ping for the Render free tier. This task runs inside the
+# web process and requests the public health endpoint every five minutes.
+# It can reduce idle spin-downs, but Render does not guarantee this workaround.
+SELF_PING_INTERVAL_SECONDS = max(60, int(os.environ.get("SELF_PING_INTERVAL_SECONDS", "300")))
+SELF_PING_URL = (os.environ.get("RENDER_EXTERNAL_URL") or BASE_URL).rstrip("/") + "/health"
+_self_ping_task: asyncio.Task | None = None
+
+
+def _send_self_ping() -> int:
+    request = urllib.request.Request(
+        SELF_PING_URL,
+        headers={"User-Agent": "FatherVPN-Backend-Keepalive/1.0", "Accept": "application/json"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        response.read(256)
+        return response.status
+
+
+async def _self_ping_loop() -> None:
+    while True:
+        await asyncio.sleep(SELF_PING_INTERVAL_SECONDS)
+        try:
+            status = await asyncio.to_thread(_send_self_ping)
+            print(f"[keepalive] Self-ping {SELF_PING_URL}: HTTP {status}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[keepalive] Self-ping failed: {type(exc).__name__}: {exc}")
+
+
+@app.on_event("startup")
+async def start_self_ping() -> None:
+    global _self_ping_task
+    if _self_ping_task is None or _self_ping_task.done():
+        _self_ping_task = asyncio.create_task(_self_ping_loop(), name="fathervpn-self-ping")
+        print(f"[keepalive] Backend self-ping enabled: every {SELF_PING_INTERVAL_SECONDS}s")
+
+
+@app.on_event("shutdown")
+async def stop_self_ping() -> None:
+    global _self_ping_task
+    if _self_ping_task is not None:
+        _self_ping_task.cancel()
+        try:
+            await _self_ping_task
+        except asyncio.CancelledError:
+            pass
+        _self_ping_task = None
+
 ADMIN_WEB_TOKEN = os.environ.get("ADMIN_WEB_TOKEN", "").strip()
 ADMIN_SESSION = hashlib.sha256((ADMIN_WEB_TOKEN + ":session").encode()).hexdigest() if ADMIN_WEB_TOKEN else ""
 ADMIN_CSRF = hashlib.sha256((ADMIN_WEB_TOKEN + ":csrf").encode()).hexdigest()[:32] if ADMIN_WEB_TOKEN else ""
