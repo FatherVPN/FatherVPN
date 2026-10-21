@@ -131,7 +131,7 @@ h1 span{color:var(--md-primary)}
 .cycle-copy{min-height:48px;color:var(--md-on-surface-variant);font-size:12px;line-height:1.65;margin:9px 0 16px}
 .cycle-line{height:6px;border-radius:99px;background:var(--md-surface-container-highest);overflow:hidden}
 .cycle-line span{display:block;width:0;height:100%;background:var(--md-primary);transition:width .4s ease}
-.footer{padding:12px 4px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--md-on-surface-variant);font-size:10px}
+.footer{padding:12px 4px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--md-on-surface-variant);font-size:10px}.legal-links{display:flex;flex-wrap:wrap;gap:10px}.legal-links a{text-decoration:underline;text-underline-offset:3px}
 .footer b{color:var(--md-primary);letter-spacing:.08em}
 .toast{position:fixed;z-index:10;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));width:max-content;max-width:calc(100% - 32px);padding:13px 17px;border:1px solid var(--md-outline-variant);border-radius:16px;background:var(--md-surface-container-high);color:var(--md-on-surface);box-shadow:var(--shadow);font-size:12px;font-weight:700;opacity:0;transform:translate(-50%,12px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -249,7 +249,7 @@ h1 span{color:var(--md-primary)}
       <div class="cycle-line"><span id="cycleFill"></span></div>
     </article>
   </section>
-  <footer class="footer"><span><b>FATHERVPN</b> · PRIVATE BY DESIGN</span><span>Аккаунт <span id="telegramId">—</span></span></footer>
+  <footer class="footer"><span><b>FATHERVPN</b> · PRIVATE BY DESIGN</span><span class="legal-links"><a href="/privacy">Конфиденциальность</a><a href="/terms">Соглашение</a></span><span>Аккаунт <span id="telegramId">—</span></span></footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
